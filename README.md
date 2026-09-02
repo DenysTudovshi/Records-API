@@ -117,8 +117,16 @@ Running the binary directly against your own PostgreSQL:
 
 ```bash
 dotnet publish src/Whalebone.Records.Api -c Release -o ./out
-Database__ConnectionString="Host=localhost;Port=5432;Database=whalebone;Username=whalebone;Password=whalebone" \
+Database__ConnectionString="Host=localhost;Database=your-db;Username=your-user;Password=your-password" \
   ./out/Whalebone.Records.Api
+```
+
+For repeated local runs, put it in user secrets rather than an environment variable -
+it is stored outside the repository:
+
+```bash
+dotnet user-secrets --project src/Whalebone.Records.Api \
+  set "Database:ConnectionString" "Host=localhost;Database=your-db;Username=your-user;Password=your-password"
 ```
 
 ### Configuration
