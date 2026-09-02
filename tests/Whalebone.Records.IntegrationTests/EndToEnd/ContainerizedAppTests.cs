@@ -5,6 +5,8 @@ using DotNet.Testcontainers.Networks;
 
 using Testcontainers.PostgreSql;
 
+using Whalebone.Records.IntegrationTests.Infrastructure;
+
 namespace Whalebone.Records.IntegrationTests.EndToEnd;
 
 /// <summary>
@@ -85,7 +87,7 @@ public sealed class ContainerizedAppTests : IAsyncLifetime
         }
 
         _builtImage = new ImageFromDockerfileBuilder()
-            .WithDockerfileDirectory(CommonDirectoryPath.GetSolutionDirectory(), string.Empty)
+            .WithDockerfileDirectory(RepositoryRoot.Find())
             .WithDockerfile("Dockerfile")
             .WithName("whalebone-records-api:endtoend")
             .WithCleanUp(false)
