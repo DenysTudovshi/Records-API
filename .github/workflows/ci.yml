@@ -1,0 +1,190 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Pull requests may be superseded freely. Pushes to main must not be: a cancelled
+  # publish can leave the mutable :latest tag pointing at an older commit than :sha-*.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/whalebone-records-api
+  DOTNET_NOLOGO: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - run: dotnet restore
+
+      # ContinuousIntegrationBuild=true turns warnings into errors. Locally they stay
+      # warnings so a newer SDK's analyzers cannot block a reviewer from building.
+      - name: Build
+        run: dotnet build -c Release --no-restore -p:ContinuousIntegrationBuild=true
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The end-to-end tests run the real image. Building it here, once, means the
+      # artifact under test is the same artifact that gets published.
+      - name: Build the image the end-to-end tests will run
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: whalebone-records-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test
+        env:
+          WHALEBONE_IMAGE: whalebone-records-api:ci
+        run: >
+          dotnet test -c Release --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory ./TestResults
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: test-results
+          path: ./TestResults
+          retention-days: 14
+
+  publish:
+    name: Publish image to GHCR
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tags: ${{ steps.meta.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # arm64 emulation, so a reviewer on Apple Silicon runs a native image rather
+      # than a slow amd64 one under Rosetta.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=long
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          labels: |
+            org.opencontainers.image.title=Whalebone Records API
+            org.opencontainers.image.description=Stores and retrieves person records over a JSON REST API.
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+  verify-published:
+    name: Verify the published image as a reviewer would
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Everything below runs with no credentials at all. Publishing and then hoping is
+      # the usual pattern; this turns three silent assumptions - the package is public,
+      # the image actually boots, the README command still works - into a red build.
+      - name: Drop all registry credentials
+        run: docker logout ${{ env.REGISTRY }}
+
+      - name: Confirm the image is anonymously pullable
+        run: |
+          if ! docker pull "${REGISTRY}/${IMAGE_NAME}:latest"; then
+            echo "::error::Anonymous pull of ${REGISTRY}/${IMAGE_NAME}:latest failed."
+            echo "::error::The GHCR package is still private. Fix once, by hand:"
+            echo "::error::  GitHub -> Packages -> whalebone-records-api -> Package settings"
+            echo "::error::  -> Change visibility -> Public"
+            exit 1
+          fi
+
+      - name: Confirm the manifest covers amd64 and arm64
+        run: |
+          docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}:latest" > manifest.txt
+          cat manifest.txt
+          grep -q "linux/amd64" manifest.txt || { echo "::error::linux/amd64 missing"; exit 1; }
+          grep -q "linux/arm64" manifest.txt || { echo "::error::linux/arm64 missing"; exit 1; }
+
+      # The literal command the README gives a reviewer, run verbatim.
+      - name: Run the quickstart command
+        run: curl -fsSL "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/raw/main/compose.yaml" | docker compose -f - up -d --wait
+
+      - name: Round-trip POST /save then GET /{id}
+        run: |
+          set -euo pipefail
+          ID=$(uuidgen)
+          echo "Saving record ${ID}"
+          CODE=$(curl -sS -o /tmp/save.json -w '%{http_code}' -X POST http://localhost:8080/save \
+            -H 'Content-Type: application/json' \
+            -d "{\"external_id\":\"${ID}\",\"name\":\"some name\",\"email\":\"email@email.com\",\"date_of_birth\":\"2020-01-01T12:12:34+00:00\"}")
+          cat /tmp/save.json; echo
+          [ "$CODE" = "201" ] || { echo "::error::POST /save returned ${CODE}, expected 201"; exit 1; }
+
+          BODY=$(curl -fsS "http://localhost:8080/${ID}")
+          echo "$BODY"
+          echo "$BODY" | grep -q "\"external_id\":\"${ID}\"" || { echo "::error::external_id missing from GET"; exit 1; }
+          echo "$BODY" | grep -q '"date_of_birth":"2020-01-01T12:12:34+00:00"' || {
+            echo "::error::date_of_birth did not round-trip"; exit 1; }
+
+          curl -sS -o /dev/null -w 'unknown id -> %{http_code}\n' "http://localhost:8080/$(uuidgen)"
+
+      - name: Container logs
+        if: ${{ failure() }}
+        run: curl -fsSL "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/raw/main/compose.yaml" | docker compose -f - logs
+
+      - name: Tear down
+        if: ${{ always() }}
+        run: curl -fsSL "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/raw/main/compose.yaml" | docker compose -f - down -v
