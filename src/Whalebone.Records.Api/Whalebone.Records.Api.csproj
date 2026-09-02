@@ -12,6 +12,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="prometheus-net.AspNetCore" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
 

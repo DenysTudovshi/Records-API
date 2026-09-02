@@ -174,6 +174,58 @@ sees them; a test pins that rather than trusting it.
 Console logging is JSON, with scopes included. The service ships as a container, and
 unstructured console text costs a field-by-field parse before anything can query it.
 
+### Metrics
+
+`GET /metrics` serves the Prometheus text exposition format
+(`text/plain; version=0.0.4`). It publishes ASP.NET Core's own instruments rather than
+hand-rolled counters: the framework already records `http.server.request.duration` and
+`http.server.active_requests` for every route, including the ones nobody remembered to
+instrument, and a parallel set of counters would only be a second and staler copy.
+
+```
+microsoft_aspnetcore_hosting_http_server_request_duration_count{
+  http_request_method="POST", http_response_status_code="201",
+  http_route="/save", network_protocol_version="1.1", url_scheme="http"} 1
+```
+
+`_count` is the request count and `_sum`/`_bucket` the duration — .NET 8 emits no separate
+counter, so one histogram answers both. The exporter prefixes bridged names with the meter, which
+is why they read `microsoft_aspnetcore_hosting_...` rather than the OpenTelemetry spelling.
+
+**No series is ever labelled with `external_id`.** That would be unbounded cardinality and
+personal data in a single move, and a metrics store is exactly the wrong place to discover
+either. The route label is the route *template* — `/{id:guid}`, never `/3fa85f64-...` — and a
+request that matched no route carries no route label at all, so a caller cannot mint series by
+hammering random paths. A test asserts the scrape contains no UUID-shaped token anywhere and no
+label named `external_id`, `name`, `email` or `date_of_birth`.
+
+Latency buckets are set explicitly to eleven web-shaped boundaries from 5 ms to 10 s. The
+bridge's own default is 25 exponential buckets from 10 ms, whose top boundary lands near 46
+hours — 26 series per label combination, to describe a request that would have been abandoned
+before the tenth of them.
+
+**Why `prometheus-net.AspNetCore` and not the OpenTelemetry exporter.** The OpenTelemetry
+Prometheus exporter has never shipped a stable release: all 34 published versions are
+prerelease, the newest is `1.18.0-beta.1`, and its own README warns of breaking changes before
+stable. `prometheus-net.AspNetCore` is MIT and stable, and it is one direct package against
+three. What it costs, stated plainly: the project has had no commits since January 2024, it
+targets `net6.0` (which `net8.0` consumes without a warning), and its bridged metric names
+diverge from the OpenTelemetry convention. If any of that starts to bite — or the exporter
+reaches 1.0 — swapping is a one-file change, because nothing in the service references it.
+
+**`/metrics` is on the main port, and in production it usually should not be.** A scrape
+endpoint normally gets its own listener or a network policy, so it is reachable by the scraper
+and by nothing else; here it also publishes `process_*` and `dotnet_*` internals to anyone who
+can reach the API. It is on port 8080 because the deliverable is a one-line quickstart, and an
+endpoint a reviewer cannot reach is an endpoint they have to take on trust. The production
+position is the second port.
+
+One implementation note that is not obvious from the code: the meter bridge starts behind an
+`Interlocked` guard, because the Prometheus registry is process-global while a host is not.
+`WebApplicationFactory` runs the entry point once per host it builds, and a second adapter over
+the same registry doubles every measurement — a test suite would read exactly twice the truth
+and look entirely plausible doing it.
+
 ## Layout
 
 ```
@@ -244,7 +296,7 @@ test pins the wire half by asserting the exact four field names come back.
 Requires the .NET 8 SDK and a running Docker daemon (the tests start real containers).
 
 ```bash
-dotnet test                                                    # 44 tests
+dotnet test                                                    # 61 tests
 docker compose -f compose.yaml -f compose.build.yaml up --build # run from source
 ```
 

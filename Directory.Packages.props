@@ -22,6 +22,17 @@
     <PackageVersion Include="Microsoft.Extensions.Options.DataAnnotations" Version="8.0.0" />
 
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="8.1.4" />
+
+    <!-- MIT, and MIT for every 8.x release to date - which is a fact about the past,
+         not a guarantee, so this is pinned like the rest. Not bracketed: in this file a
+         bracket means "a known licence cliff sits immediately above", and diluting that
+         signal would cost more than it buys.
+         Chosen over OpenTelemetry.Exporter.Prometheus.AspNetCore, which has never shipped
+         a stable release - all 34 published versions are prerelease, the newest being
+         1.18.0-beta.1 - and whose own README warns of breaking changes before stable.
+         Accepted trade-off: the package targets net6.0, which net8.0 consumes without a
+         warning, and its repository has had no commits since January 2024. -->
+    <PackageVersion Include="prometheus-net.AspNetCore" Version="8.2.1" />
   </ItemGroup>
 
   <ItemGroup Label="Testing">

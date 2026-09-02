@@ -4,10 +4,13 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
 
+using Prometheus;
+
 using Whalebone.Records.Api;
 using Whalebone.Records.Api.Correlation;
 using Whalebone.Records.Api.Endpoints;
 using Whalebone.Records.Api.ExceptionHandling;
+using Whalebone.Records.Api.Observability;
 using Whalebone.Records.Application;
 using Whalebone.Records.Infrastructure;
 using Whalebone.Records.Infrastructure.Persistence;
@@ -18,6 +21,8 @@ var builder = WebApplication.CreateBuilder(args);
 // container, and unstructured console text costs a field-by-field parse on ingest.
 // IncludeScopes is what carries the correlation id onto every line of a request.
 builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
+
+ServiceMetrics.StartCollecting();
 
 // Configuration comes from appsettings, then environment variables
 // (Database__ConnectionString), then command-line arguments - last wins.
@@ -83,6 +88,11 @@ app.UseSwaggerUI(options =>
 // Deliberately no UseHttpsRedirection: the container serves plain HTTP on 8080 and
 // terminates TLS at the ingress. Redirecting here would break `curl http://localhost:8080`.
 app.MapEndpoints();
+
+// On the main port, deliberately - see the README. In production a scrape endpoint
+// usually gets its own port or a network policy; here it has to be reachable by the
+// same one-line quickstart that reaches everything else.
+app.MapMetrics();
 
 app.MapHealthChecks(ApiRoutes.HealthLive, new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks(ApiRoutes.HealthReady, new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
