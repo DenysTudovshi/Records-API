@@ -12,9 +12,15 @@ public sealed class DatabaseOptions
     public const string SectionName = "Database";
 
     /// <summary>Validated at startup, so a missing value fails fast and loudly instead of at first request.</summary>
+    /// <remarks>
+    /// The message names the setting but deliberately carries no example connection
+    /// string. Validation messages are written to stderr and to the log sink, and a
+    /// credential-shaped literal has no business in either - not even a placeholder one,
+    /// which is exactly the sort of line that later gets edited to a real value.
+    /// </remarks>
     [Required(AllowEmptyStrings = false, ErrorMessage =
-        "Database__ConnectionString is required. Example: " +
-        "Host=db;Port=5432;Database=whalebone;Username=whalebone;Password=whalebone")]
+        "Database__ConnectionString is required and must not be empty. " +
+        "See compose.yaml or the Configuration section of the README.")]
     public string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>Applies pending migrations during startup. On by default so a cold start just works.</summary>

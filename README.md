@@ -123,11 +123,36 @@ Database__ConnectionString="Host=localhost;Port=5432;Database=whalebone;Username
 
 ### Configuration
 
-| Variable                      | Default | Notes                                     |
-| ----------------------------- | ------- | ----------------------------------------- |
-| `Database__ConnectionString`  | —       | Required; validated at startup, fails fast |
-| `Database__MigrateOnStartup`  | `true`  | Migrations run under an advisory lock      |
-| `ASPNETCORE_URLS`             | `http://+:8080` | |
+Read by the service:
+
+| Variable                        | Default         | Notes                                      |
+| ------------------------------- | --------------- | ------------------------------------------ |
+| `Database__ConnectionString`    | —               | Required; validated at startup, fails fast |
+| `Database__MigrateOnStartup`    | `true`          | Migrations run under an advisory lock      |
+| `Database__MaxRetryCount`       | `8`             | Transient-failure retries                  |
+| `ASPNETCORE_URLS`               | `http://+:8080` |                                            |
+
+Read by `compose.yaml`, which wires the two services together:
+
+| Variable            | Default     |
+| ------------------- | ----------- |
+| `POSTGRES_DB`       | `whalebone` |
+| `POSTGRES_USER`     | `whalebone` |
+| `POSTGRES_PASSWORD` | `whalebone` |
+
+```bash
+POSTGRES_PASSWORD=something-else docker compose up
+```
+
+The defaults exist so the quickstart is one command. They belong to a database this
+compose file creates itself, which publishes no host port and is reachable only from the
+api container on a private network — so they are throwaway values, not credentials.
+
+No connection string or password literal appears anywhere in `src/` — `appsettings.Development.json`
+carries logging levels only, and a developer's own connection string belongs in user secrets. The
+`Database__ConnectionString` validation message names the setting but carries no example
+value: validation messages reach stderr and the log sink, and a credential-shaped literal
+does not belong in either — least of all one that a later edit might quietly turn real.
 
 ### Tests
 

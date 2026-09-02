@@ -6,6 +6,9 @@
     <!-- The integration tests drive the real host through WebApplicationFactory<Program>. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- So a developer's own local connection string lives in user secrets rather
+         than in a file that gets committed. -->
+    <UserSecretsId>02c435ae-fb5c-4391-9d13-c483c9bc6932</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>

@@ -11,11 +11,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: whalebone
-      POSTGRES_USER: whalebone
-      POSTGRES_PASSWORD: whalebone
+      # Throwaway credentials for a database this file creates, that publishes no host
+      # port, and that is reachable only from the api container on this private network.
+      # Overridable so nobody is tempted to treat the defaults as a real deployment:
+      #   POSTGRES_PASSWORD=... docker compose up
+      POSTGRES_DB: ${POSTGRES_DB:-whalebone}
+      POSTGRES_USER: ${POSTGRES_USER:-whalebone}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-whalebone}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U whalebone -d whalebone"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 3s
       timeout: 3s
       retries: 20
@@ -32,7 +36,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      Database__ConnectionString: "Host=db;Port=5432;Database=whalebone;Username=whalebone;Password=whalebone"
+      Database__ConnectionString: "Host=db;Port=5432;Database=${POSTGRES_DB:-whalebone};Username=${POSTGRES_USER:-whalebone};Password=${POSTGRES_PASSWORD:-whalebone}"
       ASPNETCORE_ENVIRONMENT: Production
     ports:
       - "8080:8080"
