@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Whalebone.Records.Application</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Deliberately references neither ASP.NET Core nor EF Core. That constraint is
+       the reason this project exists: the use cases and their rules stay testable
+       without a web host or a database. -->
+  <ItemGroup>
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+  </ItemGroup>
+
+</Project>
