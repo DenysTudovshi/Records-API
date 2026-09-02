@@ -1,0 +1,28 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- Warnings fail the build in CI, where the SDK is pinned. Locally they stay
+       warnings, so a reviewer on a newer SDK - whose analyzers may introduce rules
+       that did not exist when this was written - can still build and run. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>$(ContinuousIntegrationBuild)</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Tests: Method_Scenario_Outcome naming is intentional, and library API-design
+       rules do not apply to fixtures and test doubles. -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('Tests'))">
+    <NoWarn>$(NoWarn);CA1707;CA1861;CA2007;CA1001;CA1711</NoWarn>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+</Project>

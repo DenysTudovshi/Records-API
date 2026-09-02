@@ -1,0 +1,14 @@
+# Normalise to LF in the repository. The Dockerfile, compose files and workflow all run
+# on Linux, and a stray CRLF in any of them fails in ways that are tedious to diagnose.
+* text=auto eol=lf
+
+*.sln       text eol=crlf
+*.csproj    text eol=lf
+*.props     text eol=lf
+*.cs        text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+Dockerfile  text eol=lf
+.editorconfig text eol=lf
