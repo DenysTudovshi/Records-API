@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Whalebone.Records.Api</RootNamespace>
+    <AssemblyName>Whalebone.Records.Api</AssemblyName>
+    <!-- The integration tests drive the real host through WebApplicationFactory<Program>. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Whalebone.Records.Application\Whalebone.Records.Application.csproj" />
+    <ProjectReference Include="..\Whalebone.Records.Infrastructure\Whalebone.Records.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Whalebone.Records.IntegrationTests" />
+  </ItemGroup>
+
+</Project>
