@@ -5,6 +5,12 @@ public abstract class IntegrationTestBase(PostgresFixture fixture) : IAsyncLifet
 {
     protected HttpClient Client => fixture.Client;
 
+    /// <summary>Every log line the host has written.</summary>
+    protected CapturingLoggerProvider Logs => fixture.Logs;
+
+    /// <summary>The running host's services, for assertions about how it was configured.</summary>
+    protected IServiceProvider Services => fixture.Services;
+
     public Task InitializeAsync() => fixture.ResetAsync();
 
     public Task DisposeAsync() => Task.CompletedTask;

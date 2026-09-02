@@ -37,17 +37,24 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public HttpClient Client { get; private set; } = null!;
 
+    /// <summary>Every log line the host has written, for the tests that assert on their contents.</summary>
+    public CapturingLoggerProvider Logs { get; } = new();
+
+    /// <summary>The running host's services, for assertions about how it was configured.</summary>
+    public IServiceProvider Services => _factory.Services;
+
     public async Task InitializeAsync()
     {
         await _database.StartAsync();
 
-        _factory = new ApiFactory(_database.GetConnectionString());
+        _factory = new ApiFactory(_database.GetConnectionString(), Logs);
         Client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-        // WebApplicationFactory captures the host at Build() and unwinds out of the entry
-        // point, so the MigrateAsync call in Program.cs never reaches this host. Invoking
-        // the very same production migrator here keeps the schema honest; the startup path
-        // itself is covered by the end-to-end container test.
+        // The entry point does run past builder.Build() here - a test run logs "Database schema
+        // is up to date." twice, once from Program.cs and once from the line below - but nothing
+        // synchronises that call with CreateClient returning. Invoking the same production
+        // migrator explicitly makes the schema a precondition of this fixture rather than a race
+        // it happens to win. The startup path itself is covered by the end-to-end container test.
         await DatabaseMigrator.MigrateAsync(_factory.Services);
 
         _connection = new NpgsqlConnection(_database.GetConnectionString());

@@ -120,7 +120,8 @@ standard for a bespoke shape on the strength of a guess about who calls this.
 
 **One divergence inside the divergence.** Their `errors[]` items echo the rejected input straight
 back — `parameter: action`, `value: foo`. This service never does, and that is deliberate: here the
-rejected value is somebody's name, email address or date of birth.
+rejected value is somebody's name, email address or date of birth. See
+[Data protection](#data-protection).
 
 ## Why `date_of_birth` is stored as two columns
 
@@ -226,6 +227,60 @@ One implementation note that is not obvious from the code: the meter bridge star
 the same registry doubles every measurement — a test suite would read exactly twice the truth
 and look entirely plausible doing it.
 
+## Data protection
+
+Three of the four fields are personal data. That is not incidental to this service — it is the
+entire payload — and Whalebone marks personal data at contract level in their own API with an
+`x-wb-encrypt` vendor extension, so the handling is stated here rather than left to be inferred
+from the absence of a leak.
+
+| Field | What it is | Where it appears | Where it never appears |
+| ----- | ---------- | ---------------- | ---------------------- |
+| `name` | Personal data | Request body, response body, the `name` column | Logs, metric labels, error bodies |
+| `email` | Personal data, and an account identifier almost everywhere else | Request body, response body, the `email` column | Logs, metric labels, error bodies |
+| `date_of_birth` | Personal data, and a common answer to a knowledge-based authentication question | Request body, response body, two columns | Logs, metric labels, error bodies |
+| `external_id` | A caller-supplied opaque identifier, not personal data by itself | Request body, response body, the URL path, the framework's `RequestPath` log scope | Metric labels |
+
+**Retention.** A row lives until something deletes it. There is no TTL, no soft delete, and no
+second copy anywhere: no cache, no outbox, no event stream, no analytics sink, and — by the row
+above — no log line and no metric series. That is what the table is for. It means an erasure
+request is one `DELETE FROM person_records WHERE external_id = ...` plus whatever the operator's
+backup retention adds, rather than an archaeology exercise across systems that each kept their
+own copy for their own good reasons.
+
+**There is no `DELETE` endpoint, deliberately.** The brief specifies two endpoints, and quietly
+growing a third is the most common way this exercise gets failed. Erasure is served today by the
+operator, against the database. *The trigger to add one:* the first time an erasure request has
+to be actioned by somebody without a database session — at which point the endpoint is a
+half-hour's work precisely because nothing else holds a copy.
+
+**Nothing is provable by assertion, so it is proved by test.** `PersonalDataTests` registers a
+capturing `ILoggerProvider` in the test host, POSTs a record whose name and email are
+deliberately distinctive, and asserts neither string appears in any captured line — in the
+rendered message, in a structured state value, or in an enclosing scope. Three ascending guards
+run first (the capture is non-empty; the EF Core command channel is among the captured
+categories; the `INSERT` itself was captured), because the failure worth fearing is not the
+assertion breaking but the assertion quietly measuring an empty list.
+
+The capture is filtered at `Trace` for that provider only. The service pins
+`Microsoft.EntityFrameworkCore.Database.Command` to `Warning`, which is correct in production and
+would have made the test vacuous: a capture inheriting those pins records nothing at all.
+
+That test was verified the only way this kind of test can be: by adding
+`LogInformation("Saved {Name} {Email} {DateOfBirth}", ...)` to the save handler, watching it
+fail and name the offending line, and removing it again.
+
+A separate test asserts EF Core's `EnableSensitiveDataLogging` is off. It is off by default; the
+point is that turning it on writes every parameter value verbatim on the `Information` channel,
+which for this service is the whole payload, and the default is one line away from changing.
+
+**One deliberate divergence.** Whalebone's error contract echoes the rejected input back as
+`value` — `parameter: action`, `value: foo`. This service names the field and stops there,
+because the rejected value here is a name, an email address or a date of birth, and an error body
+is among the least controlled things a service emits: it reaches the caller, then their logs,
+then frequently a screenshot in a ticket. A test posts an invalid email and asserts the `400`
+names `email` without containing it.
+
 ## Layout
 
 ```
@@ -296,7 +351,7 @@ test pins the wire half by asserting the exact four field names come back.
 Requires the .NET 8 SDK and a running Docker daemon (the tests start real containers).
 
 ```bash
-dotnet test                                                    # 61 tests
+dotnet test                                                    # 65 tests
 docker compose -f compose.yaml -f compose.build.yaml up --build # run from source
 ```
 
@@ -382,5 +437,6 @@ back **anonymously** and exercised through the quickstart command above.
 | Generic repository      | One aggregate, three operations. The interface is smaller than the abstraction. |
 | API versioning          | Two unversioned endpoints fixed by the spec.                               |
 | Authentication          | Not in scope; the service is intended to sit behind an ingress.            |
+| A `DELETE` endpoint     | Expands a two-endpoint brief. The erasure position, and the trigger to add one, are in [Data protection](#data-protection). |
 | Second pipeline behaviour | Logging is already covered by the framework's request logging.            |
 | Separate migration job  | Startup migration under an advisory lock is correct up to a few replicas. Past that, split it out. |
