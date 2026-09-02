@@ -7,5 +7,5 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: whalebone-records-api:local
+    image: records-api:local
     pull_policy: build

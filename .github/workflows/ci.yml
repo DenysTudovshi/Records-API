@@ -18,7 +18,8 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/whalebone-records-api
+  IMAGE_BASE: records-api
+  LOCAL_IMAGE: records-api:ci
   DOTNET_NOLOGO: "true"
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
 
@@ -56,13 +57,13 @@ jobs:
         with:
           context: .
           load: true
-          tags: whalebone-records-api:ci
+          tags: ${{ env.LOCAL_IMAGE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Test
         env:
-          WHALEBONE_IMAGE: whalebone-records-api:ci
+          WHALEBONE_IMAGE: ${{ env.LOCAL_IMAGE }}
         run: >
           dotnet test -c Release --no-build
           --logger "trx;LogFileName=test-results.trx"
@@ -84,10 +85,14 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      tags: ${{ steps.meta.outputs.tags }}
     steps:
       - uses: actions/checkout@v4
+
+      # GHCR rejects a mixed-case repository, and github.repository_owner preserves the
+      # account's own capitalisation ("DenysTudovshi"). Workflow expressions have no
+      # toLower(), so the reference is lowercased here, once, in bash.
+      - name: Resolve the image reference
+        run: echo "IMAGE_REF=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_BASE}" >> "$GITHUB_ENV"
 
       # arm64 emulation, so a reviewer on Apple Silicon runs a native image rather
       # than a slow amd64 one under Rosetta.
@@ -104,14 +109,14 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE_REF }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=long
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
           labels: |
-            org.opencontainers.image.title=Whalebone Records API
+            org.opencontainers.image.title=Records API
             org.opencontainers.image.description=Stores and retrieves person records over a JSON REST API.
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
@@ -135,28 +140,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve the image reference
+        run: echo "IMAGE_REF=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_BASE}" >> "$GITHUB_ENV"
+
       # Everything below runs with no credentials at all. Publishing and then hoping is
       # the usual pattern; this turns three silent assumptions - the package is public,
       # the image actually boots, the README command still works - into a red build.
       - name: Drop all registry credentials
-        run: docker logout ${{ env.REGISTRY }}
+        run: docker logout "${REGISTRY}"
 
       - name: Confirm the image is anonymously pullable
         run: |
-          if ! docker pull "${REGISTRY}/${IMAGE_NAME}:latest"; then
-            echo "::error::Anonymous pull of ${REGISTRY}/${IMAGE_NAME}:latest failed."
-            echo "::error::The GHCR package is still private. Fix once, by hand:"
-            echo "::error::  GitHub -> Packages -> whalebone-records-api -> Package settings"
-            echo "::error::  -> Change visibility -> Public"
-            exit 1
-          fi
+          set +e
+          OUTPUT=$(docker pull "${IMAGE_REF}:latest" 2>&1)
+          STATUS=$?
+          echo "${OUTPUT}"
+          [ "${STATUS}" -eq 0 ] && exit 0
+
+          case "${OUTPUT}" in
+            *denied*|*unauthorized*|*"not found"*)
+              echo "::error::Anonymous pull of ${IMAGE_REF}:latest was denied, so the GHCR package is private."
+              echo "::error::Fix once by hand: GitHub -> Packages -> ${IMAGE_BASE} -> Package settings -> Change visibility -> Public"
+              ;;
+            *"invalid reference format"*)
+              echo "::error::'${IMAGE_REF}' is not a valid image reference. A GHCR repository must be lowercase."
+              ;;
+            *)
+              echo "::error::Anonymous pull of ${IMAGE_REF}:latest failed for a reason unrelated to visibility; see the output above."
+              ;;
+          esac
+          exit 1
 
       - name: Confirm the manifest covers amd64 and arm64
         run: |
-          docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}:latest" > manifest.txt
-          cat manifest.txt
-          grep -q "linux/amd64" manifest.txt || { echo "::error::linux/amd64 missing"; exit 1; }
-          grep -q "linux/arm64" manifest.txt || { echo "::error::linux/arm64 missing"; exit 1; }
+          docker buildx imagetools inspect "${IMAGE_REF}:latest" | tee manifest.txt
+          grep -q "linux/amd64" manifest.txt || { echo "::error::linux/amd64 missing from the manifest"; exit 1; }
+          grep -q "linux/arm64" manifest.txt || { echo "::error::linux/arm64 missing from the manifest"; exit 1; }
 
       # The literal command the README gives a reviewer, run verbatim.
       - name: Run the quickstart command

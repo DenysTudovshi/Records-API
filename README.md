@@ -1,4 +1,4 @@
-#Records API
+# Records API
 
 A small .NET 8 microservice that stores and retrieves person records over a JSON REST API,
 backed by PostgreSQL.
@@ -8,7 +8,7 @@ backed by PostgreSQL.
 No clone, no .NET SDK — just Docker:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DenysTudovshi/Whalebone-Test-Assigment/main/compose.yaml | docker compose -f - up
+curl -fsSL https://raw.githubusercontent.com/DenysTudovshi/Records-API/main/compose.yaml | docker compose -f - up
 ```
 
 This pulls the image published by the last green build of `main`, starts PostgreSQL
@@ -150,7 +150,7 @@ for `linux/amd64` and `linux/arm64`, tagged `latest` and `sha-<commit>`, and the
 back **anonymously** and exercised through the quickstart command above.
 
 > **One manual step:** the GHCR package must be set to **Public** once, by hand, under
-> Packages → `whalebone-records-api` → Package settings. Until then `verify-published`
+> Packages → `records-api` → Package settings. Until then `verify-published`
 > fails on purpose, rather than letting a broken quickstart ship quietly.
 
 ## Deliberate omissions

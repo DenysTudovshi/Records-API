@@ -1,7 +1,7 @@
 # Runs the published image. This is the file the one-line quickstart pipes in, so it
 # must stand alone: no build context, no repository checkout, no local .NET SDK.
 #
-#   curl -fsSL https://raw.githubusercontent.com/DenysTudovshi/Whalebone-Test-Assigment/main/compose.yaml | docker compose -f - up
+#   curl -fsSL https://raw.githubusercontent.com/DenysTudovshi/Records-API/main/compose.yaml | docker compose -f - up
 #
 # A fixed project name matters here: piped over stdin, Compose would otherwise name the
 # project after whatever directory the reviewer happens to be standing in.
@@ -26,7 +26,7 @@ services:
       - db-data:/var/lib/postgresql/data
 
   api:
-    image: ghcr.io/denystudovshi/whalebone-records-api:latest
+    image: ghcr.io/denystudovshi/records-api:latest
     pull_policy: always
     depends_on:
       db:

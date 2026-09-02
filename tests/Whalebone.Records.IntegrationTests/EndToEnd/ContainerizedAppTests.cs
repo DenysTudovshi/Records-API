@@ -89,7 +89,7 @@ public sealed class ContainerizedAppTests : IAsyncLifetime
         _builtImage = new ImageFromDockerfileBuilder()
             .WithDockerfileDirectory(RepositoryRoot.Find())
             .WithDockerfile("Dockerfile")
-            .WithName("whalebone-records-api:endtoend")
+            .WithName("records-api:endtoend")
             .WithCleanUp(false)
             .Build();
 
