@@ -40,6 +40,12 @@ internal sealed partial class GlobalExceptionHandler(ILogger<GlobalExceptionHand
             _ => UnexpectedError(httpContext, exception),
         };
 
+        // CustomizeProblemDetails does not reach this body: writing it directly is exactly
+        // what bypasses IProblemDetailsService, so the handler stamps the id itself. The key
+        // is spelled snake_case at the source - extension members are written verbatim, the
+        // naming policy never sees them, and a test pins that.
+        problem.Extensions["request_id"] = httpContext.TraceIdentifier;
+
         httpContext.Response.StatusCode = problem.Status!.Value;
 
         // The explicit <object> matters: serialising as ProblemDetails would slice off

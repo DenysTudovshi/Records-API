@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.OpenApi.Models;
 
 using Whalebone.Records.Api;
+using Whalebone.Records.Api.Correlation;
 using Whalebone.Records.Api.Endpoints;
 using Whalebone.Records.Api.ExceptionHandling;
 using Whalebone.Records.Application;
@@ -12,6 +13,11 @@ using Whalebone.Records.Infrastructure;
 using Whalebone.Records.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// The logs are read by a machine before they are read by a person: this ships as a
+// container, and unstructured console text costs a field-by-field parse on ingest.
+// IncludeScopes is what carries the correlation id onto every line of a request.
+builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
 
 // Configuration comes from appsettings, then environment variables
 // (Database__ConnectionString), then command-line arguments - last wins.
@@ -31,7 +37,13 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(options =>
     options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower);
 
-builder.Services.AddProblemDetails();
+// Stamps the correlation id onto every problem body the framework writes: the 404 from
+// Results.Problem, the unrouted 404 via UseStatusCodePages, and the exception
+// middleware's own fallback. It reads TraceIdentifier and not the response header,
+// because at this point the header has not been written yet.
+builder.Services.AddProblemDetails(options =>
+    options.CustomizeProblemDetails = context =>
+        context.ProblemDetails.Extensions["request_id"] = context.HttpContext.TraceIdentifier);
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddEndpointsApiExplorer();
@@ -48,7 +60,14 @@ var app = builder.Build();
 // would only serve 500s, so a failure here is fatal by design.
 await DatabaseMigrator.MigrateAsync(app.Services).ConfigureAwait(false);
 
-// First in the pipeline, ahead of anything that can throw.
+// Ahead of the exception handler on purpose. The response header works either way -
+// it is written from an OnStarting callback - but the log scope does not: registered
+// inside, it is already disposed by the time an exception unwinds to the handler, and
+// the one log line that most needs a correlation id would be the line without one.
+// The cost is that a throw in here escapes UseExceptionHandler, so it only allocates.
+app.UseRequestCorrelation();
+
+// Next, ahead of anything that can throw.
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 

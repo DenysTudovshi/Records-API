@@ -140,6 +140,40 @@ This service stores the UTC instant in `date_of_birth_utc` and the caller's offs
 comparable, and the API echoes back exactly what was sent. Pinned by tests at `+02:00`,
 `-05:30`, `+14:00` and `-12:00`.
 
+## Observability
+
+### Correlation id
+
+Every response carries an `X-Request-Id` header, and every log line written while handling that
+request carries the same value under `CorrelationId`. A caller who supplies their own
+`X-Request-Id` gets it echoed, so a trace that began upstream continues here instead of
+restarting. The header name is the one Whalebone's own API already returns.
+
+An inbound value is honoured only if it could plausibly be a request id: exactly one header, at
+most 64 characters, drawn from `[A-Za-z0-9._:-]`. Anything else is replaced with a fresh UUID
+rather than reflected. That value reaches a response header *and* every log line for the
+request, and echoing arbitrary caller-supplied bytes into both is how a correlation id turns
+into a log-injection vector.
+
+Two details, because both are easy to get wrong and neither is visible from the outside:
+
+- **The header is written from an `OnStarting` callback, never eagerly.** `UseExceptionHandler`
+  calls `Response.Clear()` — which clears every header — before invoking the exception handler,
+  so a header set before the throw is missing from the 500 that follows. `OnStarting`
+  registrations live on the response feature, which `Clear()` leaves alone. The test that asserts
+  a `400` still carries the header is what stops anyone simplifying this back to the eager form.
+- **The middleware sits outside `UseExceptionHandler`, not inside.** The header behaves the same
+  either way; the log scope does not. Registered inside, the scope is disposed as the exception
+  unwinds, so the handler's own error line — the single line that most needs a correlation id —
+  is the one without it.
+
+The id appears in every problem body as `request_id`. It is spelled `snake_case` at the source
+because `System.Text.Json` writes extension members verbatim, so the global naming policy never
+sees them; a test pins that rather than trusting it.
+
+Console logging is JSON, with scopes included. The service ships as a container, and
+unstructured console text costs a field-by-field parse before anything can query it.
+
 ## Layout
 
 ```
