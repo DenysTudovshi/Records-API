@@ -110,10 +110,53 @@ it declares `IRecordRepository` and `Infrastructure` implements it, so the depen
 points inward.
 
 Endpoints are registered through an `IEndpoint` interface with a `static abstract Map`, so a
-missing registration is a compile error rather than a missing route, and startup does no
-assembly scanning. MediatR carries one pipeline behaviour — `ValidationBehavior` — which is
-what earns it its place: validation is declared once beside each command and applies to
-every use case without per-endpoint wiring.
+missing registration is a compile error rather than a missing route, and endpoint registration
+does no assembly scanning.
+
+### Why MediatR, and what it costs
+
+Between an HTTP route and a `SELECT` sits a reflection-based dispatcher. That is a real cost,
+and worth stating rather than glossing:
+
+- one indirection hop between an endpoint and its handler;
+- one package, held to an exact licence pin (below);
+- assembly scanning at startup to build the handler map — the one place this service scans.
+
+What buys it is a single open pipeline behaviour. `ValidationBehavior` is the only one, and it
+gives both endpoints identical validation with zero per-endpoint wiring: the rules are declared
+beside the command they guard, in a project that references neither ASP.NET Core nor EF Core,
+and a new use case inherits them by existing. The alternative — calling the validator by hand
+at the top of each handler — is a few lines per endpoint that must not be forgotten, and
+forgetting them fails silently, by accepting bad input.
+
+**What would retire it.** At one behaviour and two endpoints this is close to break-even. An
+endpoint filter (`AddEndpointFilter`) reaches the same place with no package and no reflection.
+If a second behaviour never arrives — if authorisation, caching and transaction scoping all
+stay out of scope — then the dispatcher is carrying one passenger, and direct handler
+injection behind a filter is the cheaper shape. The `Application` project barely changes either
+way: the commands and their validators are already the contract.
+
+### Dependency pins
+
+Two packages are pinned to their **last open-source release**, exactly rather than as a floor,
+so a restore cannot silently cross a licence boundary:
+
+| Package              | Pin        | What the next version changed                              |
+| -------------------- | ---------- | ---------------------------------------------------------- |
+| `MediatR`            | `[12.5.0]` | 13.0.0 relicensed from Apache-2.0 to a commercial licence   |
+| `FluentAssertions`   | `[7.2.2]`  | 8.0.0 moved to an Xceed commercial licence                  |
+
+The brackets are the point. `12.5.0` in NuGet means *12.5.0 or newer*, which is exactly how a
+transitive bump walks a build across a licence change with nobody reading a diff. `[12.5.0]`
+means that version and no other, and a restore that wants otherwise fails loudly.
+
+### The line that stops the docs drifting
+
+Swashbuckle's schema generator reads `Mvc.JsonOptions`, not `ConfigureHttpJsonOptions` — even
+for minimal APIs. Configuring only the latter leaves the server speaking `external_id` while
+the OpenAPI document advertises `externalId`: the wire format and the first thing a reader
+opens, quietly disagreeing. `Program.cs` sets the snake_case policy on both, and an endpoint
+test pins the wire half by asserting the exact four field names come back.
 
 ## Development
 
@@ -208,8 +251,3 @@ back **anonymously** and exercised through the quickstart command above.
 | Authentication          | Not in scope; the service is intended to sit behind an ingress.            |
 | Second pipeline behaviour | Logging is already covered by the framework's request logging.            |
 | Separate migration job  | Startup migration under an advisory lock is correct up to a few replicas. Past that, split it out. |
-
-Dependencies are pinned to their last open-source releases on purpose: **MediatR 12.5.0**
-(13.0.0 moved to a commercial licence) and **FluentAssertions 7.2.2** (8.0.0 moved to an
-Xceed commercial licence). Both pins are exact — `[12.5.0]`, `[7.2.2]` — so a restore can
-never silently cross that boundary.
