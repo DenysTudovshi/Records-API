@@ -75,6 +75,53 @@ alternative reading is recorded so it can be argued with.
 - A zero offset is always rendered `+00:00`, so an input of `...Z` returns as `...+00:00`.
   Both are RFC 3339 spellings of the same instant.
 
+### Conventions
+
+Three of the choices above are not house style. Whalebone publishes two OpenAPI documents that
+anyone can fetch without credentials, and they settle what the brief leaves open:
+
+- <https://api.whalebone.io/whalebone/2/doc/openapi> — OpenAPI 3.0.3, *Whalebone API*, ~110 KB of YAML
+- <https://portal.whalebone.io/api/public/v1/doc/api-spec> — OpenAPI 3.0.0, *Policy Config API*, ~27 KB
+
+Both answered `200` to an unauthenticated `GET` on 2026-09-02. Readable that day is not a promise
+about tomorrow, hence the date.
+
+**`snake_case` is theirs.** Across both documents, field and query-parameter names are snake_case:
+65 distinct multi-word names against two camelCase (`createdAt` and `createdBy`, both in the portal
+spec). Real examples from the main spec — `client_ip`, `device_id`, `subscription_id`, `error_code`,
+`accepted_values`, `content_categories`; and from the portal spec — `allow_lists`, `deny_lists`,
+`match_strategy`. The claim is about names *on the wire*: the portal document's own component keys
+are PascalCase (`DomainListCreateRequest` and 44 others), which is a different namespace and one a
+client never sees.
+
+**Serving the OpenAPI document in every environment matches their practice.** Both documents above
+are the vendor's own and need no key. This service serves its own document unconditionally for the
+same reason: the deliverable is a container someone else runs, and an API explorer that only exists
+in Development helps nobody.
+
+**RFC 7807 is a considered divergence.** Their error envelope is `{message, errors: [...]}`, each
+item carrying `error`, `error_code`, `message`, `parameter`, `value` and `accepted_values`. In one
+respect that shape is better than problem+json: `error_code` is a stable integer — `21` for
+`INVALID_PARAM_VALUE`, `22` for `MISSING_PARAM_VALUE` — so a client branches on a number instead of
+string-matching prose. Neither document mentions `problem+json` or RFC 7807 anywhere in 137 KB.
+
+This service diverges anyway. `application/problem+json` is the registered media type, so a generic
+client can tell the body is an error before it parses it; and ASP.NET Core produces
+`ValidationProblemDetails` — an `errors` object keyed by field — out of the framework, so the
+per-field detail arrives without a hand-rolled envelope that would need its own tests to stay
+correct. Matching their envelope exactly would mean writing and testing that envelope, in a service
+whose contract is four fields, to gain nothing a caller of *this* API can use. The divergence costs
+one media type and one JSON shape, both at the edge, and both trivially replaceable if this ever
+had to sit behind the same gateway.
+
+*Rejected:* mirroring `{message, errors[]}` for familiarity. It is the friendlier choice for a
+reviewer who lives in their ecosystem and the wrong one for anybody else, and it trades a documented
+standard for a bespoke shape on the strength of a guess about who calls this.
+
+**One divergence inside the divergence.** Their `errors[]` items echo the rejected input straight
+back — `parameter: action`, `value: foo`. This service never does, and that is deliberate: here the
+rejected value is somebody's name, email address or date of birth.
+
 ## Why `date_of_birth` is stored as two columns
 
 Npgsql maps `DateTimeOffset` onto `timestamptz` and **rejects any non-zero offset**:
