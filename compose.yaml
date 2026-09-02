@@ -5,7 +5,7 @@
 #
 # A fixed project name matters here: piped over stdin, Compose would otherwise name the
 # project after whatever directory the reviewer happens to be standing in.
-name: whalebone-records
+name: records-api
 
 services:
   db:
