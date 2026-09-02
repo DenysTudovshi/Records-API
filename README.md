@@ -53,12 +53,23 @@ Errors are RFC 7807 `application/problem+json`. Validation failures return `400`
 
 ### Contract decisions
 
-- **`{id}` is the `external_id`.** The response contract has no other identifier, and the
-  client already knows `external_id` at `POST` time. A surrogate key exists in the table
-  but never appears on the wire. The spec is ambiguous here; this is the reading taken.
-- **`POST /save` is an upsert.** It is `save`, not `create`: idempotent on `external_id`,
-  so a retry after a network blip converges rather than failing. Concurrent duplicates
+The brief leaves two points genuinely open. Both are decisions, not assumptions, and the
+alternative reading is recorded so it can be argued with.
+
+- **`{id}` is the `external_id`.** The response is specified as containing `external_id`,
+  and that is the only identifier in the contract, so `GET /{id}` resolves against it. A
+  surrogate key exists in the table but never reaches the wire: a client only ever holds
+  the id it supplied itself.
+  *Rejected:* treating `{id}` as a server-generated internal id. It is a defensible
+  reading, but it forces a client to `POST` and parse the response before it can read
+  anything back, and it would require a fifth response field the spec does not define.
+- **`POST /save` is an upsert.** The verb is `save`, not `create`, so it is idempotent on
+  `external_id` — `201` on create, `200` on replace. With a caller-supplied id that means
+  a retry after a dropped connection converges instead of failing. Concurrent duplicates
   race the unique index; the loser catches PostgreSQL `23505` and converges on the update.
+  *Rejected:* `409 Conflict` and strict create-only semantics. Equally defensible, and a
+  small change, but it makes the endpoint non-idempotent — a retried request that already
+  succeeded then reports failure.
 - **`date_of_birth` round-trips its offset exactly.** Send `+02:00` and `GET` returns
   `+02:00`. See below — this is less obvious than it looks.
 - A zero offset is always rendered `+00:00`, so an input of `...Z` returns as `...+00:00`.
