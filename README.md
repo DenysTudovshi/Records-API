@@ -1,7 +1,13 @@
 # Records API
 
-A small .NET 8 microservice that stores and retrieves person records over a JSON REST API,
-backed by PostgreSQL.
+A .NET 8 service that stores and retrieves person records over a JSON REST API, backed by
+PostgreSQL.
+
+**Nothing in this README is asserted without being run.** The end-to-end tests drive the
+production container image over a real socket rather than an in-process test host. On every push
+to `main`, CI publishes that image, drops every registry credential, pulls the multi-arch result
+back anonymously, brings it up with the quickstart command below, and asserts a record round-trips
+with its `date_of_birth` offset intact. When this README stops being true, the build goes red.
 
 ## Quickstart
 
@@ -15,8 +21,9 @@ This pulls the image published by the last green build of `main`, starts Postgre
 alongside it, and serves the API on <http://localhost:8080> (Swagger UI at
 <http://localhost:8080/swagger>).
 
-**This exact command runs against the published image on every green build of `main`**,
-in the `verify-published` CI job, with all registry credentials dropped first.
+**This command runs against the published image on every green build of `main`**, in the
+`verify-published` CI job, with all registry credentials dropped first — with `-d --wait` added
+so the job can assert on the result rather than block on it.
 
 ### Try it
 
