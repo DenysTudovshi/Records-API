@@ -1,0 +1,42 @@
+# Runs the published image. This is the file the one-line quickstart pipes in, so it
+# must stand alone: no build context, no repository checkout, no local .NET SDK.
+#
+#   curl -fsSL https://raw.githubusercontent.com/DenysTudovshi/Whalebone-Test-Assigment/main/compose.yaml | docker compose -f - up
+#
+# A fixed project name matters here: piped over stdin, Compose would otherwise name the
+# project after whatever directory the reviewer happens to be standing in.
+name: whalebone-records
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: whalebone
+      POSTGRES_USER: whalebone
+      POSTGRES_PASSWORD: whalebone
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whalebone -d whalebone"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    # Deliberately no published port: nothing outside this network needs Postgres, and
+    # 5432 is already taken on plenty of developer machines.
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  api:
+    image: ghcr.io/denystudovshi/whalebone-records-api:latest
+    pull_policy: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      Database__ConnectionString: "Host=db;Port=5432;Database=whalebone;Username=whalebone;Password=whalebone"
+      ASPNETCORE_ENVIRONMENT: Production
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  db-data:

@@ -1,0 +1,23 @@
+# Keep the build context to sources only: everything the image needs is restored
+# or compiled inside the SDK stage. A stray bin/ or obj/ from a Windows host
+# poisons the Linux build with the wrong RID assets.
+**/bin/
+**/obj/
+**/out/
+artifacts/
+
+.git/
+.github/
+.vs/
+.idea/
+.vscode/
+
+**/*.user
+**/TestResults/
+coverage/
+
+README.md
+LICENSE
+compose*.yaml
+.gitignore
+.dockerignore

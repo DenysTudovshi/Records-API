@@ -1,0 +1,11 @@
+# Overlay for working on the service locally: builds from this checkout instead of
+# pulling the published image.
+#
+#   docker compose -f compose.yaml -f compose.build.yaml up --build
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: whalebone-records-api:local
+    pull_policy: build
