@@ -1,4 +1,4 @@
-# Whalebone Records API
+#Records API
 
 A small .NET 8 microservice that stores and retrieves person records over a JSON REST API,
 backed by PostgreSQL.
