@@ -1,13 +1,9 @@
 # Records API
 
+[![CI](https://github.com/DenysTudovshi/Records-API/actions/workflows/ci.yml/badge.svg)](https://github.com/DenysTudovshi/Records-API/actions/workflows/ci.yml)
+
 A .NET 8 service that stores and retrieves person records over a JSON REST API, backed by
 PostgreSQL.
-
-**Nothing in this README is asserted without being run.** The end-to-end tests drive the
-production container image over a real socket rather than an in-process test host. On every push
-to `main`, CI publishes that image, drops every registry credential, pulls the multi-arch result
-back anonymously, brings it up with the quickstart command below, and asserts a record round-trips
-with its `date_of_birth` offset intact. When this README stops being true, the build goes red.
 
 ## Quickstart
 
