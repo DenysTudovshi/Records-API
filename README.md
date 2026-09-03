@@ -93,13 +93,13 @@ anyone can fetch without credentials, and they settle what the brief leaves open
 Both answered `200` to an unauthenticated `GET` on 2026-09-02. Readable that day is not a promise
 about tomorrow, hence the date.
 
-**`snake_case` is theirs.** Across both documents, field and query-parameter names are snake_case:
-65 distinct multi-word names against two camelCase (`createdAt` and `createdBy`, both in the portal
-spec). Real examples from the main spec — `client_ip`, `device_id`, `subscription_id`, `error_code`,
+**`snake_case` is theirs.** Counting every key declared in a `properties` map plus every declared
+parameter name, and ignoring `example` payloads: across both documents 64 distinct names carry an
+underscore, against two camelCase ones (`createdAt` and `createdBy`, both in the portal spec). Real examples from the main spec — `client_ip`, `device_id`, `subscription_id`, `error_code`,
 `accepted_values`, `content_categories`; and from the portal spec — `allow_lists`, `deny_lists`,
 `match_strategy`. The claim is about names *on the wire*: the portal document's own component keys
-are PascalCase (`DomainListCreateRequest` and 44 others), which is a different namespace and one a
-client never sees.
+are PascalCase — all 46 of them, `DomainListCreateRequest` among them — which is a different
+namespace and one a client never sees.
 
 **Serving the OpenAPI document in every environment matches their practice.** Both documents above
 are the vendor's own and need no key. This service serves its own document unconditionally for the
@@ -219,7 +219,8 @@ stable. `prometheus-net.AspNetCore` is MIT and stable, and it is one direct pack
 three. What it costs, stated plainly: the project has had no commits since January 2024, it
 targets `net6.0` (which `net8.0` consumes without a warning), and its bridged metric names
 diverge from the OpenTelemetry convention. If any of that starts to bite — or the exporter
-reaches 1.0 — swapping is a one-file change, because nothing in the service references it.
+reaches 1.0 — swapping touches two files: `ServiceMetrics.cs`, and the two lines of `Program.cs`
+that name the package. `Application` and `Infrastructure` do not know an exporter exists.
 
 **`/metrics` is on the main port, and in production it usually should not be.** A scrape
 endpoint normally gets its own listener or a network policy, so it is reachable by the scraper
@@ -315,7 +316,8 @@ and worth stating rather than glossing:
 
 - one indirection hop between an endpoint and its handler;
 - one package, held to an exact licence pin (below);
-- assembly scanning at startup to build the handler map — the one place this service scans.
+- assembly scanning at startup to build the handler map — one of the two scans this service
+  does at startup; `AddValidatorsFromAssemblyContaining`, a line below it, is the other.
 
 What buys it is a single open pipeline behaviour. `ValidationBehavior` is the only one, and it
 gives both endpoints identical validation with zero per-endpoint wiring: the rules are declared
@@ -325,7 +327,9 @@ at the top of each handler — is a few lines per endpoint that must not be forg
 forgetting them fails silently, by accepting bad input.
 
 **What would retire it.** At one behaviour and two endpoints this is close to break-even. An
-endpoint filter (`AddEndpointFilter`) reaches the same place with no package and no reflection.
+endpoint filter (`AddEndpointFilter`) reaches the same place with no package — though not with
+no reflection, since FluentValidation would go on scanning for validators unless those were
+registered by hand too.
 If a second behaviour never arrives — if authorisation, caching and transaction scoping all
 stay out of scope — then the dispatcher is carrying one passenger, and direct handler
 injection behind a filter is the cheaper shape. The `Application` project barely changes either
