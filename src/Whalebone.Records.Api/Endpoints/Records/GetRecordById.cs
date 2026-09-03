@@ -6,6 +6,12 @@ using Whalebone.Records.Application.Records.GetById;
 namespace Whalebone.Records.Api.Endpoints.Records;
 
 /// <summary>Reads a record by its <c>external_id</c>.</summary>
+/// <remarks>
+/// <c>{id}</c> is the <c>external_id</c>, not the surrogate key: it is the only identifier the
+/// contract defines, and the one a client already holds because it supplied it. Resolving against
+/// a server-generated id would force a POST-and-parse before anything could be read back, and add
+/// a fifth response field the brief does not define.
+/// </remarks>
 internal sealed class GetRecordById : IEndpoint
 {
     public static void Map(IEndpointRouteBuilder app)

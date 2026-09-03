@@ -52,61 +52,6 @@ object keyed by the wire field name (`date_of_birth`, not `DateOfBirth`) — a m
 malformed one alike. Every response carries an `X-Request-Id` header, repeated in the problem body
 as `request_id`.
 
-## Decisions
-
-### Why .NET and not Go
-
-The brief says *preferably* in Go, and Whalebone's stack includes C# already. I chose the
-language I can take furthest in the time available.
-
-What is actually on show here — preserving the caller's UTC offset through a `timestamptz`
-column, converging the upsert race on the unique index, proving personal data never reaches a
-log line, keeping `external_id` out of metric labels — is design work, and none of it is
-C#-specific. The layering maps onto an idiomatic Go project without rearrangement
-(`handler` → `service` → `repository`, with the interface declared by its consumer). A first Go
-service written to a deadline would have shown less of that, not more.
-
-Happy to port it if Go is a hard requirement rather than a preference.
-
-### `{id}` is the `external_id`
-
-The response is specified as containing `external_id`, and it is the only identifier in the
-contract, so `GET /{id}` resolves against it. A surrogate key exists in the table but never
-reaches the wire.
-
-*Rejected:* treating `{id}` as a server-generated internal id. Defensible, but it forces a client
-to `POST` and parse the response before it can read anything back, and it needs a fifth response
-field the brief does not define.
-
-### `POST /save` is an upsert
-
-The verb is `save`, not `create`, so it is idempotent on `external_id`: `201` on create, `200` on
-replace. With a caller-supplied id that means a retry after a dropped connection converges
-instead of failing. Concurrent duplicates race the unique index; the loser catches PostgreSQL
-`23505`, re-reads, and converges on the update. Pinned by a test that fires eight simultaneous
-writers and asserts exactly one `201`.
-
-*Rejected:* `409 Conflict` and strict create-only semantics. Equally defensible and a small
-change, but it makes the endpoint non-idempotent — a retried request that already succeeded then
-reports failure.
-
-### `date_of_birth` is stored as two columns
-
-Npgsql maps `DateTimeOffset` onto `timestamptz` and **rejects any non-zero offset**, so the
-obvious mapping throws on the primary happy path. The obvious fix — `ToUniversalTime()` — stops
-the throw but answers `+00:00` to a request that said `+02:00`: the right instant, the wrong
-document.
-
-This service stores the UTC instant in `date_of_birth_utc` and the caller's offset in
-`date_of_birth_offset_minutes`, and reconstructs on read. The column stays sortable and
-comparable, and the API echoes back exactly what was sent. Pinned by tests at `+02:00`, `-05:30`,
-`+14:00` and `-12:00`. A zero offset always renders `+00:00`, so an input of `...Z` returns as
-`...+00:00` — both are RFC 3339 spellings of the same instant.
-
-The offset is required, not optional: `"2020-01-01"` is rejected rather than quietly given the
-**host's** offset, which would store `+01:00` on a CET machine and `+00:00` in this service's own
-container — one request, two different records, and an offset the caller never sent.
-
 ## Matching Whalebone's conventions
 
 Whalebone publishes two OpenAPI documents that need no credentials, and they settle what the

@@ -18,9 +18,12 @@ public sealed record SaveRecordCommand(
 public sealed record SaveRecordResult(PersonRecordDto Record, bool Created);
 
 /// <remarks>
-/// <c>POST /save</c> is treated as an upsert keyed on <c>external_id</c>: the caller
-/// supplies the identity, so the operation is idempotent and a retry after a network
-/// blip converges instead of failing.
+/// <c>POST /save</c> is treated as an upsert keyed on <c>external_id</c> - the verb is
+/// <c>save</c>, not <c>create</c>. The caller supplies the identity, so the operation is
+/// idempotent (201 on create, 200 on replace) and a retry after a network blip converges
+/// instead of failing. <c>409 Conflict</c> with create-only semantics would be a smaller
+/// change and equally defensible, but not idempotent: a retried request that had already
+/// succeeded would then report failure.
 /// </remarks>
 internal sealed class SaveRecordCommandHandler(
     IRecordRepository repository,
