@@ -4,7 +4,9 @@ namespace Whalebone.Records.Api.Endpoints;
 
 /// <summary>
 /// Registers every endpoint. Resolved through <c>static abstract</c> rather than assembly
-/// scanning, so a missing registration is a compile error and startup stays reflection-free.
+/// scanning, so a missing registration is a compile error rather than a missing route, and
+/// mapping costs no reflection. Startup as a whole is not reflection-free - MediatR and
+/// FluentValidation each scan the Application assembly, which the README prices.
 /// </summary>
 internal static class EndpointRegistration
 {

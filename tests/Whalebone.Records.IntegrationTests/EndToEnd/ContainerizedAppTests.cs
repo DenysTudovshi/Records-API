@@ -16,9 +16,11 @@ namespace Whalebone.Records.IntegrationTests.EndToEnd;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The other integration tests use <c>WebApplicationFactory</c>, which is fast but never
-/// binds a socket and never runs Kestrel or the host's own startup path. This class closes
-/// that gap: nothing here is substituted, and no test-only code path exists in the app.
+/// The other integration tests use <c>WebApplicationFactory</c>, which is fast, and which does
+/// run the entry point in full - migrations included. What it never does is bind a socket:
+/// Kestrel never starts, requests travel over an in-memory transport, and the image's own
+/// entrypoint, environment parsing and network are all absent. This class closes that gap:
+/// nothing here is substituted, and no test-only code path exists in the app.
 /// </para>
 /// <para>
 /// CI sets <c>WHALEBONE_IMAGE</c> to the tag it just built, so the same code that proves

@@ -50,11 +50,14 @@ public sealed class PostgresFixture : IAsyncLifetime
         _factory = new ApiFactory(_database.GetConnectionString(), Logs);
         Client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-        // The entry point does run past builder.Build() here - a test run logs "Database schema
-        // is up to date." twice, once from Program.cs and once from the line below - but nothing
-        // synchronises that call with CreateClient returning. Invoking the same production
-        // migrator explicitly makes the schema a precondition of this fixture rather than a race
-        // it happens to win. The startup path itself is covered by the end-to-end container test.
+        // Redundant today, and deliberately kept. The entry point does run past builder.Build()
+        // under WebApplicationFactory, and CreateClient does not return until it has got past its
+        // own MigrateAsync - verified by delaying the entry point three seconds and watching the
+        // tests still pass - which is why a run logs "Database schema is up to date." twice.
+        // What this line buys is independence from Database:MigrateOnStartup. Turn that off and
+        // the entry point skips migrating, and every test in the suite would fail on a missing
+        // table for a reason that has nothing to do with the test. A migrated schema is this
+        // fixture's own precondition, so the fixture asserts it rather than inheriting it.
         await DatabaseMigrator.MigrateAsync(_factory.Services);
 
         _connection = new NpgsqlConnection(_database.GetConnectionString());

@@ -21,7 +21,6 @@ public sealed class PersonalDataTests(PostgresFixture fixture) : IntegrationTest
     private const string Name = "Zzqqxx Piinamemarker";
     private const string Email = "piiemailmarker@zzqqxx-example.test";
     private const string DateOfBirth = "1971-03-04T02:06:07+02:00";
-    private const string DateMarker = "1971-03-04";
 
     private const string EfCommandCategory = "Microsoft.EntityFrameworkCore.Database.Command";
 
@@ -49,7 +48,7 @@ public sealed class PersonalDataTests(PostgresFixture fixture) : IntegrationTest
         captured.Should().Contain(entry => entry.Message.Contains("INSERT INTO person_records", StringComparison.Ordinal),
             "the write that carries the personal data must be among the lines examined");
 
-        foreach (var marker in new[] { Name, Email, DateMarker })
+        foreach (var marker in new[] { Name, Email }.Concat(DateOfBirthRenderings()))
         {
             var leaked = captured
                 .Where(entry => entry.AllText().Any(text => text.Contains(marker, StringComparison.OrdinalIgnoreCase)))
@@ -60,6 +59,33 @@ public sealed class PersonalDataTests(PostgresFixture fixture) : IntegrationTest
                 marker,
                 string.Join(" | ", leaked.Select(entry => $"{entry.Category}: {entry.Message}")));
         }
+    }
+
+    /// <summary>
+    /// Every spelling of the date of birth a log line could contain.
+    /// </summary>
+    /// <remarks>
+    /// A name and an email address are the same string wherever they are written; a date is not.
+    /// <c>ILogger</c> renders an argument through <c>ToString()</c>, so a
+    /// <see cref="DateTimeOffset"/> logged by a future diagnostic reads
+    /// <c>03/04/1971 02:06:07 +02:00</c>, not the ISO-8601 form the caller sent - and matching only
+    /// the ISO form would let exactly that line through while this test stayed green. The
+    /// renderings are computed rather than hard-coded so the test does not itself depend on the
+    /// runner's culture.
+    /// </remarks>
+    private static IEnumerable<string> DateOfBirthRenderings()
+    {
+        var value = DateTimeOffset.Parse(DateOfBirth, CultureInfo.InvariantCulture);
+
+        // As sent on the wire, and as EF Core formats a timestamp with sensitive logging on.
+        yield return "1971-03-04";
+
+        yield return value.ToString(CultureInfo.InvariantCulture);
+        yield return value.ToString(CultureInfo.CurrentCulture);
+
+        // The stored instant is a DateTime, and renders differently again.
+        yield return value.UtcDateTime.ToString(CultureInfo.InvariantCulture);
+        yield return value.UtcDateTime.ToString(CultureInfo.CurrentCulture);
     }
 
     [Fact]
