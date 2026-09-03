@@ -47,9 +47,10 @@ Both record endpoints speak this shape, in `snake_case`:
 }
 ```
 
-Errors are RFC 7807 `application/problem+json`. Validation failures return `400` with an
-`errors` object keyed by the wire field name (`date_of_birth`, not `DateOfBirth`). Every
-response carries an `X-Request-Id` header, repeated in the problem body as `request_id`.
+Errors are RFC 7807 `application/problem+json`. Validation failures return `400` with an `errors`
+object keyed by the wire field name (`date_of_birth`, not `DateOfBirth`) — a missing field and a
+malformed one alike. Every response carries an `X-Request-Id` header, repeated in the problem body
+as `request_id`.
 
 ## Decisions
 
@@ -102,6 +103,10 @@ comparable, and the API echoes back exactly what was sent. Pinned by tests at `+
 `+14:00` and `-12:00`. A zero offset always renders `+00:00`, so an input of `...Z` returns as
 `...+00:00` — both are RFC 3339 spellings of the same instant.
 
+The offset is required, not optional: `"2020-01-01"` is rejected rather than quietly given the
+**host's** offset, which would store `+01:00` on a CET machine and `+00:00` in this service's own
+container — one request, two different records, and an offset the caller never sent.
+
 ## Matching Whalebone's conventions
 
 Whalebone publishes two OpenAPI documents that need no credentials, and they settle what the
@@ -112,10 +117,8 @@ brief leaves open. Both answered `200` to an unauthenticated `GET` on 2026-09-02
 
 **`snake_case` is theirs.** Counting every key in a `properties` map plus every declared
 parameter name, across both documents: 62 names carry an underscore, against exactly two
-camelCase (`createdAt`, `createdBy`). So the wire format here is `snake_case` — and because
-Swashbuckle reads `Mvc.JsonOptions` rather than `ConfigureHttpJsonOptions` even for minimal APIs,
-`Program.cs` sets the policy on both, or the server would speak `external_id` while the OpenAPI
-document advertised `externalId`.
+camelCase (`createdAt`, `createdBy`). So the wire format here is `snake_case`, in the response body
+and in the OpenAPI document alike.
 
 **`X-Request-Id` is theirs.** Their API returns one, as a UUID, so a caller sitting in front of
 both can correlate across them without a translation table.
@@ -153,19 +156,15 @@ entire payload, and Whalebone marks personal data at contract level in their own
 | `date_of_birth` | Request, response, two columns | Logs, metric labels, error bodies |
 | `external_id` | Request, response, URL path, the framework's `RequestPath` scope | Metric labels |
 
-**Proved by test, not by assertion.** `PersonalDataTests` registers a capturing `ILoggerProvider`,
-POSTs a record with deliberately distinctive values, and asserts neither string appears in any
-captured line — message, structured state, or enclosing scope. Three ascending guards run first
-(the capture is non-empty; the EF Core command channel is among the captured categories; the
-`INSERT` itself was captured), because the failure worth fearing is not the assertion breaking but
-the assertion quietly measuring an empty list. A date is matched in every rendering, not just the
-ISO-8601 one, since `ILogger` renders arguments through `ToString()`.
+**Proved by test, not by assertion.** `PersonalDataTests` captures every log line the host writes
+and asserts that none carries the name, the email or the date of birth — in the message, in a
+structured value, or in an enclosing scope. Guards run first so the assertion can never pass by
+measuring an empty list, which is the failure worth fearing.
 
-That test was verified the only way this kind of test can be: by adding a
+The test was itself verified the only way this kind of test can be: by adding a
 `LogInformation("Saved {Name} {Email}", ...)` to the save handler, watching it fail and name the
-offending line, and removing it again. A separate test asserts EF Core's
-`EnableSensitiveDataLogging` is off — it is off by default, and the default is one line away from
-changing.
+offending line, then removing it. A separate test asserts EF Core's `EnableSensitiveDataLogging` is
+off — it is off by default, and the default is one line away from changing.
 
 **Error bodies never echo the rejected value.** The rejected value here is somebody's name, email
 or date of birth, and an error body is among the least controlled things a service emits: it
@@ -180,18 +179,13 @@ rather than an archaeology exercise across systems that each kept their own copy
 
 ## Observability
 
-**Correlation id.** Every response carries `X-Request-Id`, and every log line written while
-handling that request carries it under `CorrelationId`. A caller who supplies their own gets it
-echoed, so a trace that began upstream continues here instead of restarting. An inbound value is
-honoured only if it could plausibly be a request id — exactly one header, at most 64 characters,
-drawn from `[A-Za-z0-9._:-]` — because that value reaches a response header *and* every log line,
-and echoing arbitrary caller-supplied bytes into both is how a correlation id turns into a
-log-injection vector.
-
-Two details the code explains in place, because both are easy to undo by "simplifying": the header
-is written from an `OnStarting` callback (`UseExceptionHandler` calls `Response.Clear()` before the
-handler runs), and the middleware sits *outside* `UseExceptionHandler` so the log scope is still
-alive when the handler writes its own error line. A test pins each.
+**Correlation id.** Every response carries `X-Request-Id` — error responses included — and every
+log line written while handling that request carries it under `CorrelationId`. A caller who
+supplies their own gets it echoed, so a trace that began upstream continues here instead of
+restarting. An inbound value is honoured only if it could plausibly be a request id — exactly one
+header, at most 64 characters, drawn from `[A-Za-z0-9._:-]` — because that value reaches a response
+header *and* every log line, and echoing arbitrary caller-supplied bytes into both is how a
+correlation id turns into a log-injection vector.
 
 Console logging is JSON with scopes included: this ships as a container, and unstructured console
 text costs a field-by-field parse before anything can query it.
@@ -200,8 +194,7 @@ text costs a field-by-field parse before anything can query it.
 Core's own instruments rather than hand-rolled counters — the framework already records
 `http.server.request.duration` and `http.server.active_requests` for every route, including the
 ones nobody remembered to instrument, and a parallel set of counters would only be a second and
-staler copy. Latency buckets are set explicitly to eleven web-shaped boundaries from 5 ms to 10 s;
-the bridge's own default is 25 exponential buckets whose top boundary lands near 46 hours.
+staler copy.
 
 **No series is ever labelled with `external_id`** — that would be unbounded cardinality and
 personal data in a single move. The route label is the route *template* (`/{id:guid}`, never
@@ -213,7 +206,7 @@ token and no label named `external_id`, `name`, `email` or `date_of_birth`.
 shipped a stable release — all 34 published versions are prerelease. Stated plainly, the cost is a
 package with no commits since January 2024, targeting `net6.0`, whose bridged metric names diverge
 from the OpenTelemetry convention (hence `microsoft_aspnetcore_hosting_...`). Swapping touches two
-files; `Application` and `Infrastructure` do not know an exporter exists.
+files.
 
 **`/metrics` is on the main port, and in production it usually should not be.** A scrape endpoint
 normally gets its own listener or a network policy; here it also publishes `process_*` internals to
@@ -245,11 +238,10 @@ with zero per-endpoint wiring, with the rules declared beside the command they g
 that references neither ASP.NET Core nor EF Core. The alternative is a few lines per endpoint that
 must not be forgotten, and forgetting them fails silently, by accepting bad input.
 
-At one behaviour and two endpoints this is close to break-even. An endpoint filter reaches the same
-place with no package. If a second behaviour never arrives — authorisation, caching and transaction
-scoping all staying out of scope — the dispatcher is carrying one passenger, and direct handler
-injection behind a filter is the cheaper shape. `Application` barely changes either way: the
-commands and their validators are already the contract.
+At one behaviour and two endpoints this is close to break-even, and an endpoint filter reaches the
+same place with no package. If a second behaviour never arrives, direct handler injection behind a
+filter is the cheaper shape — and `Application` barely changes either way, since the commands and
+their validators are already the contract.
 
 **Dependency pins.** Two packages are pinned to their last open-source release, *exactly* rather
 than as a floor, so a restore cannot silently cross a licence boundary:
@@ -267,7 +259,7 @@ transitive bump walks a build across a licence change with nobody reading a diff
 Requires the .NET 8 SDK and a running Docker daemon (the tests start real containers).
 
 ```bash
-dotnet test                                                      # 65 tests
+dotnet test                                                      # 78 tests
 docker compose -f compose.yaml -f compose.build.yaml up --build   # run from source
 ```
 
@@ -304,10 +296,10 @@ the api container on a private network — throwaway values, not credentials.
 POSTGRES_PASSWORD=something-else docker compose up
 ```
 
-No connection string or password literal appears anywhere in `src/`. The
-`Database__ConnectionString` validation message names the setting but carries no example value:
-validation messages reach stderr and the log sink, and a credential-shaped literal does not belong
-in either — least of all one that a later edit might quietly turn real.
+No connection string or password literal appears anywhere in `src/` — not even in the
+`Database__ConnectionString` validation message, which names the setting but gives no example.
+That message reaches stderr and the log sink, and a placeholder in either is one edit away from
+being real.
 
 ### Tests
 
