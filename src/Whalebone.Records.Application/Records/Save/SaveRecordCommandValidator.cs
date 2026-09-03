@@ -13,11 +13,6 @@ namespace Whalebone.Records.Application.Records.Save;
 /// </remarks>
 public sealed class SaveRecordCommandValidator : AbstractValidator<SaveRecordCommand>
 {
-    /// <summary>RFC 3696 practical maximum for an email address.</summary>
-    private const int EmailMaxLength = 320;
-
-    private const int NameMaxLength = 200;
-
     public SaveRecordCommandValidator(TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(timeProvider);
@@ -28,12 +23,12 @@ public sealed class SaveRecordCommandValidator : AbstractValidator<SaveRecordCom
 
         RuleFor(command => command.Name)
             .NotEmpty().WithMessage("'name' is required.")
-            .MaximumLength(NameMaxLength)
+            .MaximumLength(PersonRecord.NameMaxLength)
             .OverridePropertyName("name");
 
         RuleFor(command => command.Email)
             .NotEmpty().WithMessage("'email' is required.")
-            .MaximumLength(EmailMaxLength)
+            .MaximumLength(PersonRecord.EmailMaxLength)
             // FluentValidation's EmailAddress() only looks for an '@' by design, and full
             // RFC 5322 in a regex is a known dead end. MailAddress plus a dotted host is
             // the pragmatic bar.
@@ -45,11 +40,12 @@ public sealed class SaveRecordCommandValidator : AbstractValidator<SaveRecordCom
             .WithMessage("'date_of_birth' is required and must be an RFC 3339 timestamp.")
             .DependentRules(() =>
             {
+                // No range check on the offset: DateTimeOffset cannot hold one outside +/-14:00,
+                // so a rule here could never fail and its message could never be shown. An
+                // out-of-range offset is refused a step earlier, when the value fails to parse.
                 RuleFor(command => command.DateOfBirth)
                     .Must(value => value < timeProvider.GetUtcNow())
                     .WithMessage("'date_of_birth' must be in the past.")
-                    .Must(value => Math.Abs(value.Offset.TotalMinutes) <= PersonRecord.MaxOffsetMinutes)
-                    .WithMessage("'date_of_birth' must carry a UTC offset within +/-14:00.")
                     .OverridePropertyName("date_of_birth");
             })
             .OverridePropertyName("date_of_birth");
@@ -57,7 +53,7 @@ public sealed class SaveRecordCommandValidator : AbstractValidator<SaveRecordCom
 
     private static bool BeAnAddressableEmail(string? candidate)
     {
-        if (string.IsNullOrWhiteSpace(candidate) || candidate.Length > EmailMaxLength)
+        if (string.IsNullOrWhiteSpace(candidate) || candidate.Length > PersonRecord.EmailMaxLength)
         {
             return false;
         }

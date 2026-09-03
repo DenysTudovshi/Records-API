@@ -19,8 +19,18 @@ namespace Whalebone.Records.Application.Domain;
 /// </remarks>
 public sealed class PersonRecord
 {
-    /// <summary>RFC 3339 permits offsets within +/-14:00.</summary>
-    public const short MaxOffsetMinutes = 14 * 60;
+    /// <summary>
+    /// Maximum stored length of <see cref="Name"/>.
+    /// </summary>
+    /// <remarks>
+    /// Declared here because the validator and the column must agree. Held in two places they
+    /// drift silently in the one direction that hurts: raise the validator alone and input it
+    /// now accepts is input the column still refuses, turning a 400 into a 500.
+    /// </remarks>
+    public const int NameMaxLength = 200;
+
+    /// <summary>RFC 3696 practical maximum for an email address. Shared for the same reason.</summary>
+    public const int EmailMaxLength = 320;
 
     private PersonRecord()
     {

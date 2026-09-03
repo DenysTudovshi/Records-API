@@ -25,10 +25,10 @@ internal sealed class PersonRecordConfiguration : IEntityTypeConfiguration<Perso
             .HasDatabaseName("ix_person_records_external_id");
 
         builder.Property(record => record.Name)
-            .HasColumnName("name").HasMaxLength(200).IsRequired();
+            .HasColumnName("name").HasMaxLength(PersonRecord.NameMaxLength).IsRequired();
 
         builder.Property(record => record.Email)
-            .HasColumnName("email").HasMaxLength(320).IsRequired();
+            .HasColumnName("email").HasMaxLength(PersonRecord.EmailMaxLength).IsRequired();
 
         // Stored as the absolute instant; the caller's offset lives in its own column so
         // the API can echo the original document back byte for byte.
