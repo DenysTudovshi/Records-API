@@ -28,8 +28,15 @@ internal sealed partial class GlobalExceptionHandler(ILogger<GlobalExceptionHand
                 Title = "Validation failed.",
             },
 
-            // The framework's message describes the caller's malformed request, not our
-            // internals, so relaying it is safe and genuinely useful.
+            // Kestrel-level read failures: an oversized body, a bad Content-Length, malformed
+            // chunked encoding. Those messages describe the transport rather than our internals
+            // or the caller's data, so relaying one is safe and genuinely useful.
+            //
+            // Note what does *not* arrive here: a malformed JSON body. Minimal API binding
+            // catches its own JsonException without ever throwing, and answers with the generic
+            // problem body - correct status, no errors member, no field named. That is why the
+            // two scalars a caller can plausibly misspell are parsed leniently and rejected by
+            // the validator instead - see LenientGuidConverter.
             BadHttpRequestException badRequest => new ProblemDetails
             {
                 Status = badRequest.StatusCode,

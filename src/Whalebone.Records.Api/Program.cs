@@ -7,6 +7,7 @@ using Microsoft.OpenApi.Models;
 using Prometheus;
 
 using Whalebone.Records.Api;
+using Whalebone.Records.Api.Contracts;
 using Whalebone.Records.Api.Correlation;
 using Whalebone.Records.Api.Endpoints;
 using Whalebone.Records.Api.ExceptionHandling;
@@ -34,6 +35,18 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
     options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+
+    // A malformed uuid or timestamp is a validation failure, not an unreadable request. Left to
+    // the binder it becomes a generic 400 that names no field, while a *missing* field gets a
+    // precise field-keyed error - the vaguer answer landing on the likelier mistake. These hand
+    // back the sentinel the validator already rejects, so both arrive as the same shape.
+    //
+    // Here and not on Mvc.JsonOptions: this is the options instance minimal API body binding
+    // actually uses, and there are no controllers, so registering them there too would be dead
+    // configuration. It would not break the OpenAPI document either - Swashbuckle 8.1.4 still
+    // emits format uuid/date-time with these registered, which was measured rather than assumed.
+    options.SerializerOptions.Converters.Add(new LenientGuidConverter());
+    options.SerializerOptions.Converters.Add(new LenientDateTimeOffsetConverter());
 });
 
 // Swashbuckle's schema generator reads Mvc.JsonOptions even for minimal APIs. Without
