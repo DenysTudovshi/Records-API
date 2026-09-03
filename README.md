@@ -94,13 +94,13 @@ Both answered `200` to an unauthenticated `GET` on 2026-09-02. Readable that day
 about tomorrow, hence the date.
 
 **`snake_case` is theirs.** Counting every key declared in a `properties` map plus every declared
-parameter name, and ignoring `example` payloads: across both documents 64 distinct names carry an
-underscore, against two camelCase ones (`createdAt` and `createdBy`, both in the portal spec).
-Real examples from the main spec — `client_ip`, `device_id`, `subscription_id`, `error_code`,
-`accepted_values`, `content_categories`; and from the portal spec — `allow_lists`, `deny_lists`,
-`match_strategy`. The claim is about names *on the wire*: the portal document's own component keys
-are PascalCase — all 46 of them, `DomainListCreateRequest` among them — which is a different
-namespace and one a client never sees.
+parameter name, and ignoring `example` payloads: across both documents more than sixty distinct
+names carry an underscore, against exactly two camelCase ones (`createdAt` and `createdBy`, both in
+the portal spec). Real examples from the main spec — `client_ip`, `device_id`, `subscription_id`,
+`error_code`, `accepted_values`, `content_categories`; and from the portal spec — `allow_lists`,
+`deny_lists`, `match_strategy`. The claim is about names *on the wire*: the portal document's own
+component keys are PascalCase — every one of them, `DomainListCreateRequest` included — which is a
+different namespace and one a client never sees.
 
 **Serving the OpenAPI document in every environment matches their practice.** Both documents above
 are the vendor's own and need no key. This service serves its own document unconditionally for the
