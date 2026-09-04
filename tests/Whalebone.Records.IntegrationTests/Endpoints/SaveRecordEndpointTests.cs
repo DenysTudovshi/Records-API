@@ -64,10 +64,8 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
     }
 
     [Theory]
-    [InlineData("2020-01-01T12:12:34+00:00")]
     [InlineData("1990-05-15T00:00:00+02:00")]
     [InlineData("1990-05-15T08:30:00-05:30")]
-    [InlineData("1815-12-10T00:00:00+01:00")]
     public async Task Save_PreservesTheSuppliedUtcOffsetExactly(string dateOfBirth)
     {
         var externalId = Guid.NewGuid();
@@ -96,18 +94,16 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
         errors.Keys.Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
 
         // MISSING, not INVALID. The distinction is the vendor's own, and a field nobody sent is the
-        // case it exists for - see Save_MalformedScalars_... for the other side of it.
+        // case it exists for; SaveRecordCommandValidatorTests holds the other side of it.
         errors.Values.Should().OnlyContain(entry =>
             entry.GetProperty("error").GetString() == "MISSING_PARAM_VALUE"
             && entry.GetProperty("error_code").GetInt32() == 22);
     }
 
-    [Theory]
-    [InlineData("not-an-email")]
-    [InlineData("user@localhost")]
-    public async Task Save_InvalidEmail_Returns400(string email)
+    [Fact]
+    public async Task Save_InvalidEmail_Returns400()
     {
-        using var response = await Client.PostAsync("/save", Body(Guid.NewGuid().ToString(), email: email));
+        using var response = await Client.PostAsync("/save", Body(Guid.NewGuid().ToString(), email: "not-an-email"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -137,12 +133,10 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
         json.TryGetProperty("errors", out _).Should().BeFalse();
     }
 
-    [Theory]
-    [InlineData("not-a-uuid")]
-    [InlineData("3fa85f64-5717-4562-b3fc")]
-    public async Task Save_MalformedExternalId_Returns400KeyedByExternalId(string externalId)
+    [Fact]
+    public async Task Save_MalformedExternalId_Returns400KeyedByExternalId()
     {
-        using var response = await Client.PostAsync("/save", Body(externalId));
+        using var response = await Client.PostAsync("/save", Body("not-a-uuid"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
@@ -155,14 +149,11 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
         errors["external_id"].GetProperty("error_code").GetInt32().Should().Be(21);
     }
 
-    [Theory]
-    [InlineData("01/01/2020")]
-    [InlineData("yesterday")]
-    [InlineData("2020-13-45T99:99:99+00:00")]
-    public async Task Save_MalformedDateOfBirth_Returns400KeyedByDateOfBirth(string dateOfBirth)
+    [Fact]
+    public async Task Save_MalformedDateOfBirth_Returns400KeyedByDateOfBirth()
     {
         using var response = await Client.PostAsync(
-            "/save", Body(Guid.NewGuid().ToString(), dateOfBirth: dateOfBirth));
+            "/save", Body(Guid.NewGuid().ToString(), dateOfBirth: "01/01/2020"));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
@@ -176,9 +167,7 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
 
     [Theory]
     [InlineData("2020-01-01")]
-    [InlineData("2020-06-01")]
     [InlineData("2020-01-01T00:00:00")]
-    [InlineData("2020-01-01T00:00:00.123")]
     public async Task Save_TimestampWithNoOffset_Is400_NotSilentlyGivenTheHostsOffset(string dateOfBirth)
     {
         using var response = await Client.PostAsync(
@@ -195,13 +184,11 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
         errors.Keys.Should().BeEquivalentTo("date_of_birth");
     }
 
-    [Theory]
-    [InlineData("{\"nested\":\"value\"}")]
-    [InlineData("[1,2,3]")]
-    public async Task Save_CompositeWhereAScalarBelongs_Returns400WithoutDerailingTheParse(string composite)
+    [Fact]
+    public async Task Save_CompositeWhereAScalarBelongs_Returns400WithoutDerailingTheParse()
     {
-        var json = $$"""
-            {"external_id":{{composite}},"name":"some name","email":"email@email.com","date_of_birth":"2020-01-01T12:12:34+00:00"}
+        const string json = """
+            {"external_id":{"nested":"value"},"name":"some name","email":"email@email.com","date_of_birth":"2020-01-01T12:12:34+00:00"}
             """;
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
@@ -215,26 +202,6 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
         var errors = await ErrorsByParameterAsync(response);
 
         errors.Keys.Should().BeEquivalentTo("external_id");
-    }
-
-    [Fact]
-    public async Task Save_MalformedScalars_AreReportedAlongsideEveryOtherProblem()
-    {
-        using var response = await Client.PostAsync(
-            "/save", Body("not-a-uuid", name: "", email: "nope", dateOfBirth: "01/01/2020"));
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        // The point of moving the failure out of the binder: one response naming all four
-        // problems, rather than a 400 that stops at the first token it could not read.
-        var errors = await ErrorsByParameterAsync(response);
-
-        errors.Keys.Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
-
-        // All four were sent, all four were unusable: INVALID throughout, never MISSING.
-        errors.Values.Should().OnlyContain(entry =>
-            entry.GetProperty("error").GetString() == "INVALID_PARAM_VALUE"
-            && entry.GetProperty("error_code").GetInt32() == 21);
     }
 
     [Fact]

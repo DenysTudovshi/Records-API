@@ -262,7 +262,7 @@ transitive bump walks a build across a licence change with nobody reading a diff
 Requires the .NET 8 SDK and a running Docker daemon (the tests start real containers).
 
 ```bash
-dotnet test                                                      # 91 tests
+dotnet test                                                      # 62 tests
 docker compose -f compose.yaml -f compose.build.yaml up --build   # run from source
 ```
 

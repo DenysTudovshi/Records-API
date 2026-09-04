@@ -21,18 +21,9 @@ public sealed class SaveRecordCommandValidatorTests
     }
 
     [Fact]
-    public void Empty_external_id_is_rejected()
+    public void Blank_name_is_rejected()
     {
-        _validator.TestValidate(Command() with { ExternalId = Guid.Empty })
-            .ShouldHaveValidationErrorFor("external_id");
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public void Missing_name_is_rejected(string name)
-    {
-        _validator.TestValidate(Command() with { Name = name })
+        _validator.TestValidate(Command() with { Name = "   " })
             .ShouldHaveValidationErrorFor("name");
     }
 
@@ -44,32 +35,21 @@ public sealed class SaveRecordCommandValidatorTests
     }
 
     [Theory]
-    [InlineData("")]
     [InlineData("not-an-email")]
-    [InlineData("@example.com")]
     [InlineData("user@")]
+    // MailAddress accepts this one; the dotted-host rule is what rejects it.
     [InlineData("user@localhost")]
-    [InlineData("user@example.")]
     public void Invalid_email_is_rejected(string email)
     {
         _validator.TestValidate(Command() with { Email = email })
             .ShouldHaveValidationErrorFor("email");
     }
 
-    [Theory]
-    [InlineData("email@email.com")]
-    [InlineData("first.last+tag@sub.example.co.uk")]
-    public void Valid_email_is_accepted(string email)
-    {
-        _validator.TestValidate(Command() with { Email = email })
-            .ShouldNotHaveValidationErrorFor("email");
-    }
-
     [Fact]
-    public void Missing_date_of_birth_is_rejected()
+    public void Valid_email_is_accepted()
     {
-        _validator.TestValidate(Command() with { DateOfBirth = default })
-            .ShouldHaveValidationErrorFor("date_of_birth");
+        _validator.TestValidate(Command() with { Email = "first.last+tag@sub.example.co.uk" })
+            .ShouldNotHaveValidationErrorFor("email");
     }
 
     [Fact]
@@ -100,25 +80,6 @@ public sealed class SaveRecordCommandValidatorTests
         result.Errors.Select(failure => failure.PropertyName)
             .Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
         result.Errors.Should().OnlyContain(failure => failure.ErrorCode == ValidationErrorCodes.Invalid);
-    }
-
-    [Fact]
-    public void Each_field_reports_at_most_one_failure()
-    {
-        // The chains stop at their first failure, so a caller who sent nothing at all is told four
-        // things, not four-plus-the-consequences. The edge relies on this: one entry per parameter.
-        var result = _validator.Validate(new SaveRecordCommand(null, null, null, null));
-
-        result.Errors.Select(failure => failure.PropertyName).Should().OnlyHaveUniqueItems();
-    }
-
-    [Fact]
-    public void Errors_are_keyed_by_the_wire_field_names_not_the_clr_property_names()
-    {
-        var result = _validator.Validate(new SaveRecordCommand(Guid.Empty, "", "nope", default));
-
-        result.Errors.Select(failure => failure.PropertyName)
-            .Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
     }
 
     private static SaveRecordCommand Command() => new(

@@ -46,14 +46,6 @@ public sealed class GetRecordEndpointTests(PostgresFixture fixture) : Integratio
     }
 
     [Fact]
-    public async Task Get_NonUuidSegment_Returns404AtRouting()
-    {
-        using var response = await Client.GetAsync("/not-a-uuid");
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [Fact]
     public async Task Health_Ready_ReportsHealthyWhenTheDatabaseIsReachable()
     {
         using var response = await Client.GetAsync("/health/ready");

@@ -20,17 +20,6 @@ public sealed class MetricsEndpointTests(PostgresFixture fixture) : IntegrationT
         "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 
     [Fact]
-    public async Task Metrics_ServesTheTextExpositionFormat()
-    {
-        using var response = await MetricsClient.GetAsync("/metrics");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("text/plain");
-        response.Content.Headers.ContentType.Parameters
-            .Should().Contain(parameter => parameter.Name == "version" && parameter.Value == "0.0.4");
-    }
-
-    [Fact]
     public async Task Metrics_CountAndTimeBothRoutes_KeyedByTheRouteTemplate()
     {
         var externalId = Guid.NewGuid();
@@ -127,6 +116,9 @@ public sealed class MetricsEndpointTests(PostgresFixture fixture) : IntegrationT
 
         using var onScrapePort = await MetricsClient.GetAsync("/metrics");
         onScrapePort.StatusCode.Should().Be(HttpStatusCode.OK);
+        onScrapePort.Content.Headers.ContentType!.MediaType.Should().Be("text/plain");
+        onScrapePort.Content.Headers.ContentType.Parameters
+            .Should().Contain(parameter => parameter.Name == "version" && parameter.Value == "0.0.4");
     }
 
     private async Task<string> ScrapeAsync()
