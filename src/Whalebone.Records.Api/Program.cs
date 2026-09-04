@@ -141,10 +141,9 @@ app.UseSwaggerUI(options =>
 // terminates TLS at the ingress. Redirecting here would break `curl http://localhost:8080`.
 app.MapEndpoints();
 
-// On the main port, deliberately - see the README. In production a scrape endpoint
-// usually gets its own port or a network policy; here it has to be reachable by the
-// same one-line quickstart that reaches everything else.
-app.MapMetrics();
+// Its own listener, so the scrape is not reachable from wherever the API is. compose.yaml
+// publishes both ports, so a reviewer still reaches it without extra steps.
+app.MapMetrics().RequireHost(ApiRoutes.MetricsHost);
 
 app.MapHealthChecks(ApiRoutes.HealthLive, new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks(ApiRoutes.HealthReady, new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });

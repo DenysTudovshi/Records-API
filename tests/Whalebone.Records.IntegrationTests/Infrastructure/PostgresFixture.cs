@@ -37,6 +37,16 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public HttpClient Client { get; private set; } = null!;
 
+    /// <summary>
+    /// A client whose <c>Host</c> header names the metrics port.
+    /// </summary>
+    /// <remarks>
+    /// <c>TestServer</c> binds no sockets, so the port here is never dialled - but it does reach the
+    /// <c>Host</c> header, which is what <c>RequireHost</c> matches on. That makes this the only way
+    /// to exercise the scrape's own listener without leaving the in-memory transport.
+    /// </remarks>
+    public HttpClient MetricsClient { get; private set; } = null!;
+
     /// <summary>Every log line the host has written, for the tests that assert on their contents.</summary>
     public CapturingLoggerProvider Logs { get; } = new();
 
@@ -49,6 +59,12 @@ public sealed class PostgresFixture : IAsyncLifetime
 
         _factory = new ApiFactory(_database.GetConnectionString(), Logs);
         Client = _factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        MetricsClient = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            BaseAddress = new Uri("http://localhost:9090"),
+        });
 
         // Redundant today, and deliberately kept. The entry point does run past builder.Build()
         // under WebApplicationFactory, and CreateClient does not return until it has got past its
@@ -76,6 +92,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     public async Task DisposeAsync()
     {
         Client?.Dispose();
+        MetricsClient?.Dispose();
 
         if (_connection is not null)
         {

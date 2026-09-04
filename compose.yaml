@@ -40,6 +40,10 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
     ports:
       - "8080:8080"
+      # The scrape endpoint has its own listener so it is not served beside the API. Published
+      # here anyway: a reviewer should be able to reach it without extra steps, and on a real
+      # deployment this port goes to the monitoring network rather than to the world.
+      - "9090:9090"
     restart: unless-stopped
 
 volumes:

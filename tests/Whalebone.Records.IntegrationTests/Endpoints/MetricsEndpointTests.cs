@@ -22,7 +22,7 @@ public sealed class MetricsEndpointTests(PostgresFixture fixture) : IntegrationT
     [Fact]
     public async Task Metrics_ServesTheTextExpositionFormat()
     {
-        using var response = await Client.GetAsync("/metrics");
+        using var response = await MetricsClient.GetAsync("/metrics");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType!.MediaType.Should().Be("text/plain");
@@ -94,14 +94,9 @@ public sealed class MetricsEndpointTests(PostgresFixture fixture) : IntegrationT
                 .Split(' ')[1].Trim(),
             CultureInfo.InvariantCulture);
 
-        // Microsoft.AspNetCore.Hosting publishes exactly two instruments - http.server.active_requests
-        // and http.server.request.duration - so the count is two *per host*, not two absolutely. The
-        // Prometheus registry is process-global while a host is not, and this suite builds more than
-        // one; an exact number here would be asserting how many hosts the runner happened to make.
-        // Asserted first because it is the one with teeth, and the one an exact count was only ever
-        // a proxy for: nothing outside the hosting meter is bridged. Let the instrument filter slip
-        // and routing, Kestrel, EF Core and Npgsql all arrive, each labelled by a library that never
-        // considered this endpoint's cardinality.
+        // Asserted first because it is the one with teeth: nothing outside the hosting meter is
+        // bridged. Let the instrument filter slip and routing, Kestrel, EF Core and Npgsql all
+        // arrive, each labelled by a library that never considered this endpoint's cardinality.
         var bridged = body.Split('\n')
             .Where(line => line.StartsWith("# TYPE ", StringComparison.Ordinal))
             .Select(line => line.Split(' ')[2])
@@ -114,13 +109,29 @@ public sealed class MetricsEndpointTests(PostgresFixture fixture) : IntegrationT
         bridged.Should().OnlyContain(name =>
             name.StartsWith("microsoft_aspnetcore_hosting_", StringComparison.Ordinal));
 
+        // Two per host, not two absolutely: the Prometheus registry is process-global while a host
+        // is not, and this suite builds more than one. An exact number here would be asserting how
+        // many hosts the runner happened to make.
         connected.Should().BePositive();
         (connected % 2).Should().Be(0, "the hosting meter contributes its two instruments or neither");
     }
 
-    private async Task<string> ScrapeAsync()
+    [Fact]
+    public async Task Metrics_IsNotServedOnTheApiPort()
     {
         using var response = await Client.GetAsync("/metrics");
+
+        // The whole point of the separate listener: process_* internals and request timings are not
+        // reachable from wherever the API is. A 404 here, and 200 on the scrape port, is the pair.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        using var onScrapePort = await MetricsClient.GetAsync("/metrics");
+        onScrapePort.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    private async Task<string> ScrapeAsync()
+    {
+        using var response = await MetricsClient.GetAsync("/metrics");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         return await response.Content.ReadAsStringAsync();

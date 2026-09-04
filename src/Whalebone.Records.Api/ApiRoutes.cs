@@ -14,4 +14,11 @@ internal static class ApiRoutes
     internal const string HealthLive = "/health/live";
 
     internal const string HealthReady = "/health/ready";
+
+    /// <summary>
+    /// The scrape endpoint answers on this port and no other. It publishes <c>process_*</c>
+    /// internals and the service has no auth, so serving it beside the API would hand them to
+    /// anyone who can reach the API.
+    /// </summary>
+    internal const string MetricsHost = "*:9090";
 }

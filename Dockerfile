@@ -32,9 +32,10 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /app .
 
-ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_URLS="http://+:8080;http://+:9090"
 
-EXPOSE 8080
+# 8080 serves the API; 9090 serves only /metrics.
+EXPOSE 8080 9090
 
 # Non-root, using the unprivileged account the base image already provides.
 USER app

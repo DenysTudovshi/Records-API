@@ -32,7 +32,7 @@ curl http://localhost:8080/3fa85f64-5717-4562-b3fc-2c963f66afa6
 | ------ | --------------- | -------------------------------------------------------------------- |
 | `POST` | `/save`         | `201` with `Location: /{external_id}`, or `200` if it already existed |
 | `GET`  | `/{id}`         | `200` with the record, `404` if unknown                               |
-| `GET`  | `/metrics`      | Prometheus text exposition format                                     |
+| `GET`  | `/metrics`      | Prometheus text exposition format — **port `9090`**, not `8080`        |
 | `GET`  | `/health/live`  | Process liveness                                                      |
 | `GET`  | `/health/ready` | Readiness, including database reachability                            |
 
@@ -181,11 +181,10 @@ token and no label named `external_id`, `name`, `email` or `date_of_birth`.
 Served by `prometheus-net.AspNetCore`, because the OpenTelemetry Prometheus exporter has never
 shipped a stable release — all 34 published versions are prerelease.
 
-**`/metrics` is on the main port, and in production it usually should not be.** A scrape endpoint
-normally gets its own listener or a network policy; here it also publishes `process_*` internals to
-anyone who can reach the API. It is on 8080 because the deliverable is a one-line quickstart, and
-an endpoint a reviewer cannot reach is one they have to take on trust. The production position is
-the second port.
+**The scrape has its own listener, on `9090`.** It publishes `process_*` internals and this service
+has no auth, so serving it beside the API would hand those to anyone who can reach the API.
+`compose.yaml` publishes both ports, so it is still one command to reach; on a real deployment
+`9090` goes to the monitoring network. A test asserts `/metrics` answers `404` on the API port.
 
 ## Architecture
 
@@ -232,7 +231,7 @@ transitive bump walks a build across a licence change with nobody reading a diff
 Requires the .NET 8 SDK and a running Docker daemon (the tests start real containers).
 
 ```bash
-dotnet test                                                      # 90 tests
+dotnet test                                                      # 91 tests
 docker compose -f compose.yaml -f compose.build.yaml up --build   # run from source
 ```
 
@@ -258,7 +257,7 @@ dotnet user-secrets --project src/Whalebone.Records.Api \
 | `Database__ConnectionString` | —               | Required; validated at startup, fails fast |
 | `Database__MigrateOnStartup` | `true`          | Migrations run under an advisory lock      |
 | `Database__MaxRetryCount`    | `8`             | Transient-failure retries                  |
-| `ASPNETCORE_URLS`            | `http://+:8080` |                                            |
+| `ASPNETCORE_URLS`            | `http://+:8080;http://+:9090` | 8080 the API, 9090 the scrape |
 
 `compose.yaml` additionally reads `POSTGRES_DB`, `POSTGRES_USER` and `POSTGRES_PASSWORD`, all
 defaulting to `whalebone`. Those defaults exist so the quickstart is one command; they belong to a

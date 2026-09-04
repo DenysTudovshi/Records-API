@@ -8,6 +8,9 @@ public abstract class IntegrationTestBase(PostgresFixture fixture) : IAsyncLifet
     /// <summary>Every log line the host has written.</summary>
     protected CapturingLoggerProvider Logs => fixture.Logs;
 
+    /// <summary>A client addressed at the metrics port, where the scrape endpoint answers.</summary>
+    protected HttpClient MetricsClient => fixture.MetricsClient;
+
     /// <summary>The running host's services, for assertions about how it was configured.</summary>
     protected IServiceProvider Services => fixture.Services;
 
