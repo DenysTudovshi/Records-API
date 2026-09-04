@@ -1,3 +1,4 @@
+using Whalebone.Records.Application.Abstractions;
 using Whalebone.Records.Application.Records.Save;
 
 namespace Whalebone.Records.Api.Contracts;
@@ -15,9 +16,9 @@ namespace Whalebone.Records.Api.Contracts;
 /// </remarks>
 public sealed record SaveRecordRequest(
     Guid? ExternalId,
-    string? Name,
-    string? Email,
-    DateTimeOffset? DateOfBirth)
+    [property: PersonalData] string? Name,
+    [property: PersonalData] string? Email,
+    [property: PersonalData] DateTimeOffset? DateOfBirth)
 {
     /// <remarks>
     /// Straight through, deliberately. Substituting defaults here would erase the one distinction

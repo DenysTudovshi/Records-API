@@ -261,6 +261,33 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
         properties.GetProperty("date_of_birth").GetProperty("format").GetString().Should().Be("date-time");
     }
 
+    [Theory]
+    [InlineData("SaveRecordRequest")]
+    [InlineData("PersonRecordDto")]
+    public async Task OpenApiDocument_MarksThePersonalDataFieldsWithTheVendorExtension(string schema)
+    {
+        using var response = await Client.GetAsync("/swagger/v1/swagger.json");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var properties = JsonDocument.Parse(await response.Content.ReadAsStringAsync())
+            .RootElement
+            .GetProperty("components").GetProperty("schemas").GetProperty(schema)
+            .GetProperty("properties");
+
+        // x-wb-encrypt is Whalebone's own extension for exactly this, and their only one. Three of
+        // the four fields carry it; external_id is a caller-supplied opaque identifier and does not.
+        foreach (var field in new[] { "name", "email", "date_of_birth" })
+        {
+            properties.GetProperty(field).TryGetProperty("x-wb-encrypt", out var marked)
+                .Should().BeTrue("'{0}' is personal data and the document should say so", field);
+            marked.GetBoolean().Should().BeTrue();
+        }
+
+        properties.GetProperty("external_id").TryGetProperty("x-wb-encrypt", out _)
+            .Should().BeFalse("external_id is not personal data by itself");
+    }
+
     [Fact]
     public async Task Save_FutureDateOfBirth_Returns400()
     {

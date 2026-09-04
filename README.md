@@ -89,6 +89,9 @@ both can correlate across them without a translation table.
 and need no key. The deliverable here is a container someone else runs, and an API explorer that
 only exists in Development helps nobody.
 
+**`x-wb-encrypt` is theirs.** Their only vendor extension, marking personal data at contract level.
+This service's OpenAPI document carries it too — see [Data protection](#data-protection).
+
 **The error envelope is theirs.** `{message, errors: [...]}` as `application/json`, each entry
 carrying `error`, `error_code`, `message` and `parameter`. `error_code` is the stable integer their
 examples use throughout — `22` for `MISSING_PARAM_VALUE`, `21` for `INVALID_PARAM_VALUE`, `10` for
@@ -117,8 +120,11 @@ reason — no field in this contract is an enum.
 ## Data protection
 
 Three of the four fields are personal data. That is not incidental to this service, it is the
-entire payload, and Whalebone marks personal data at contract level in their own API with an
-`x-wb-encrypt` extension, so the handling is stated rather than left to be inferred.
+entire payload. Whalebone mark personal data at contract level with `x-wb-encrypt` — their only
+vendor extension — and this service's OpenAPI document carries the same one on `name`, `email` and
+`date_of_birth`. Theirs sits on query parameters and this on schema properties, because that is
+where each contract's personal data lives; the extension and its meaning are identical. A test pins
+which three fields carry it, and that `external_id` does not.
 
 | Field | Where it appears | Where it never appears |
 | ----- | ---------------- | ---------------------- |
@@ -172,11 +178,8 @@ personal data in a single move. The route label is the route *template* (`/{id:g
 cannot mint series by hammering random paths. A test asserts the scrape contains no UUID-shaped
 token and no label named `external_id`, `name`, `email` or `date_of_birth`.
 
-`prometheus-net.AspNetCore` was chosen over the OpenTelemetry Prometheus exporter, which has never
-shipped a stable release — all 34 published versions are prerelease. Stated plainly, the cost is a
-package with no commits since January 2024, targeting `net6.0`, whose bridged metric names diverge
-from the OpenTelemetry convention (hence `microsoft_aspnetcore_hosting_...`). Swapping touches two
-files.
+Served by `prometheus-net.AspNetCore`, because the OpenTelemetry Prometheus exporter has never
+shipped a stable release — all 34 published versions are prerelease.
 
 **`/metrics` is on the main port, and in production it usually should not be.** A scrape endpoint
 normally gets its own listener or a network policy; here it also publishes `process_*` internals to
@@ -229,7 +232,7 @@ transitive bump walks a build across a licence change with nobody reading a diff
 Requires the .NET 8 SDK and a running Docker daemon (the tests start real containers).
 
 ```bash
-dotnet test                                                      # 88 tests
+dotnet test                                                      # 90 tests
 docker compose -f compose.yaml -f compose.build.yaml up --build   # run from source
 ```
 

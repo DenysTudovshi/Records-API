@@ -12,6 +12,7 @@ using Whalebone.Records.Api.Correlation;
 using Whalebone.Records.Api.Endpoints;
 using Whalebone.Records.Api.ExceptionHandling;
 using Whalebone.Records.Api.Observability;
+using Whalebone.Records.Api.OpenApi;
 using Whalebone.Records.Application;
 using Whalebone.Records.Infrastructure;
 using Whalebone.Records.Infrastructure.Persistence;
@@ -60,12 +61,19 @@ builder.Services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(options =>
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options => options.SwaggerDoc("v1", new OpenApiInfo
+builder.Services.AddSwaggerGen(options =>
 {
-    Title = "Whalebone Records API",
-    Version = "v1",
-    Description = "Stores and retrieves person records.",
-}));
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Whalebone Records API",
+        Version = "v1",
+        Description = "Stores and retrieves person records.",
+    });
+
+    // Marks the three personal-data fields with x-wb-encrypt, the extension Whalebone use for the
+    // same purpose on their own contracts.
+    options.SchemaFilter<PersonalDataSchemaFilter>();
+});
 
 var app = builder.Build();
 
