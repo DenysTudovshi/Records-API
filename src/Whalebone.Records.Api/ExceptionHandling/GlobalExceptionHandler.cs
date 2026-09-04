@@ -1,14 +1,16 @@
 using FluentValidation;
 
 using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.AspNetCore.Mvc;
+
+using Whalebone.Records.Api.Contracts;
+using Whalebone.Records.Application.Abstractions;
 
 namespace Whalebone.Records.Api.ExceptionHandling;
 
 /// <summary>
-/// Maps unhandled exceptions onto RFC 7807 responses: validation failures become a 400
-/// carrying per-field errors, and anything unexpected becomes a bare 500 that never
-/// leaks exception text, type names or connection strings.
+/// Maps unhandled exceptions onto the <see cref="ErrorResponse"/> envelope: validation failures
+/// become a <c>400</c> naming each parameter, and anything unexpected becomes a bare <c>500</c>
+/// that never leaks exception text, type names or connection strings.
 /// </summary>
 internal sealed partial class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> logger) : IExceptionHandler
 {
@@ -20,45 +22,39 @@ internal sealed partial class GlobalExceptionHandler(ILogger<GlobalExceptionHand
         ArgumentNullException.ThrowIfNull(httpContext);
         ArgumentNullException.ThrowIfNull(exception);
 
-        ProblemDetails problem = exception switch
+        // Read from TraceIdentifier and not the response header: UseExceptionHandler has already
+        // called Response.Clear() by the time this runs, so the header is not there to read.
+        var requestId = httpContext.TraceIdentifier;
+
+        // object, not ErrorResponse: a 500 is the bare `error` schema rather than the envelope, and
+        // the two are different shapes on purpose. WriteAsJsonAsync<object> serialises by runtime
+        // type, so declaring it here is what stops the wrong one being written.
+        (int Status, object Body) result = exception switch
         {
-            ValidationException validation => new ValidationProblemDetails(ToFieldErrors(validation))
-            {
-                Status = StatusCodes.Status400BadRequest,
-                Title = "Validation failed.",
-            },
+            ValidationException validation => (
+                StatusCodes.Status400BadRequest,
+                new ErrorResponse("Request validation failed", ToErrorDetails(validation), requestId)),
 
             // Kestrel-level read failures: an oversized body, a bad Content-Length, malformed
-            // chunked encoding. Those messages describe the transport rather than our internals
-            // or the caller's data, so relaying one is safe and genuinely useful.
+            // chunked encoding. Those messages describe the transport rather than our internals or
+            // the caller's data, so relaying one is safe and genuinely useful. No parameter is
+            // identifiable, so the envelope carries message alone.
             //
-            // Note what does *not* arrive here: a malformed JSON body. Minimal API binding
-            // catches its own JsonException without ever throwing, and answers with the generic
-            // problem body - correct status, no errors member, no field named. That is why the
-            // two scalars a caller can plausibly misspell are parsed leniently and rejected by
-            // the validator instead - see LenientGuidConverter.
-            BadHttpRequestException badRequest => new ProblemDetails
-            {
-                Status = badRequest.StatusCode,
-                Title = "The request could not be read.",
-                Detail = badRequest.Message,
-            },
+            // Note what does *not* arrive here: a malformed JSON body. Minimal API binding catches
+            // its own JsonException without ever throwing, and the status-code handler in Program
+            // writes that one. The two scalars a caller can plausibly misspell never reach either -
+            // they are parsed leniently and rejected by the validator. See LenientGuidConverter.
+            BadHttpRequestException badRequest => (
+                badRequest.StatusCode,
+                ErrorResponse.Plain(badRequest.Message, requestId)),
 
-            _ => UnexpectedError(httpContext, exception),
+            _ => (StatusCodes.Status500InternalServerError, UnexpectedError(httpContext, exception, requestId)),
         };
 
-        // CustomizeProblemDetails does not reach this body: writing it directly is exactly
-        // what bypasses IProblemDetailsService, so the handler stamps the id itself. The key
-        // is spelled snake_case at the source - extension members are written verbatim, the
-        // naming policy never sees them, and a test pins that.
-        problem.Extensions["request_id"] = httpContext.TraceIdentifier;
+        httpContext.Response.StatusCode = result.Status;
 
-        httpContext.Response.StatusCode = problem.Status!.Value;
-
-        // The explicit <object> matters: serialising as ProblemDetails would slice off
-        // ValidationProblemDetails and silently drop the "errors" member.
         await httpContext.Response
-            .WriteAsJsonAsync<object>(problem, options: null, contentType: "application/problem+json", cancellationToken)
+            .WriteAsJsonAsync<object>(result.Body, options: null, contentType: "application/json", cancellationToken)
             .ConfigureAwait(false);
 
         return true;
@@ -67,22 +63,25 @@ internal sealed partial class GlobalExceptionHandler(ILogger<GlobalExceptionHand
     [LoggerMessage(Level = LogLevel.Error, Message = "Unhandled exception for {Method} {Path}")]
     private static partial void LogUnhandled(ILogger logger, Exception exception, string method, string path);
 
-    private static Dictionary<string, string[]> ToFieldErrors(ValidationException exception) =>
+    /// <summary>
+    /// One entry per failure, in the order the validators produced them.
+    /// </summary>
+    /// <remarks>
+    /// No grouping by parameter: every rule chain stops at its first failure, so a parameter cannot
+    /// appear twice. If that ever changes, a duplicate is better surfaced than silently merged.
+    /// </remarks>
+    private static ErrorDetail[] ToErrorDetails(ValidationException exception) =>
         exception.Errors
-            .GroupBy(failure => failure.PropertyName, StringComparer.Ordinal)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Select(failure => failure.ErrorMessage).Distinct(StringComparer.Ordinal).ToArray(),
-                StringComparer.Ordinal);
+            .Select(failure => string.Equals(failure.ErrorCode, ValidationErrorCodes.Missing, StringComparison.Ordinal)
+                ? ErrorDetail.Missing(failure.PropertyName, failure.ErrorMessage)
+                : ErrorDetail.Invalid(failure.PropertyName, failure.ErrorMessage))
+            .ToArray();
 
-    private ProblemDetails UnexpectedError(HttpContext httpContext, Exception exception)
+    private FaultResponse UnexpectedError(HttpContext httpContext, Exception exception, string requestId)
     {
         LogUnhandled(logger, exception, httpContext.Request.Method, httpContext.Request.Path);
 
-        return new ProblemDetails
-        {
-            Status = StatusCodes.Status500InternalServerError,
-            Title = "An unexpected error occurred.",
-        };
+        // Their own 500 example, verbatim in shape: error, error_code, message, and nothing of ours.
+        return FaultResponse.Unexpected("Unexpected error occurred.", requestId);
     }
 }

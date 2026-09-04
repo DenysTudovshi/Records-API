@@ -66,8 +66,8 @@ public sealed class CorrelationIdTests(PostgresFixture fixture) : IntegrationTes
 
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
 
-        // snake_case, and asserted rather than assumed: extension members are written verbatim,
-        // so the key is whatever the source spells - the naming policy never touches it.
+        // snake_case, and asserted rather than assumed: the key comes from the global naming policy
+        // applied to ErrorResponse.RequestId, which is one policy change away from reading requestId.
         json.TryGetProperty("request_id", out var requestId).Should().BeTrue();
         requestId.GetString().Should().Be(header);
         json.TryGetProperty("requestId", out _).Should().BeFalse();

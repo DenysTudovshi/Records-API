@@ -77,10 +77,9 @@ internal static class LenientScalar
 /// <para>
 /// Minimal API body binding does not surface a <see cref="JsonException"/> to
 /// <c>UseExceptionHandler</c>: it catches the failure itself and writes a <c>400</c> carrying only
-/// the generic problem body, with no <c>errors</c> member and no mention of which field was at
-/// fault. So a caller who omitted a field got a precise, field-keyed answer, while a caller who
-/// misspelled one got told merely that the request was bad - the vaguer answer landing on the
-/// likelier mistake.
+/// the bare envelope, with no <c>errors</c> member and no mention of which field was at fault. So a
+/// caller who omitted a field got a precise answer naming it, while a caller who misspelled one got
+/// told merely that the request was bad - the vaguer answer landing on the likelier mistake.
 /// </para>
 /// <para>
 /// Yielding the sentinel the validator already rejects moves the failure out of the binder and

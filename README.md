@@ -47,10 +47,27 @@ Both record endpoints speak this shape, in `snake_case`:
 }
 ```
 
-Errors are RFC 7807 `application/problem+json`. Validation failures return `400` with an `errors`
-object keyed by the wire field name (`date_of_birth`, not `DateOfBirth`) — a missing field and a
-malformed one alike. Every response carries an `X-Request-Id` header, repeated in the problem body
-as `request_id`.
+Errors use Whalebone's own envelope, as `application/json`:
+
+```json
+{
+  "message": "Request validation failed",
+  "errors": [
+    { "error": "MISSING_PARAM_VALUE", "error_code": 22, "message": "'name' is required.", "parameter": "name" },
+    { "error": "INVALID_PARAM_VALUE", "error_code": 21, "message": "'email' is not a valid email address.", "parameter": "email" }
+  ],
+  "request_id": "0c209a31-12e6-4e6c-923a-6c5bb27ae769"
+}
+```
+
+Every response carries an `X-Request-Id` header; error bodies repeat it as `request_id`.
+
+A `500` uses the other shape the vendor publishes — flat, not wrapped, because there is no
+parameter to name and nothing to put in an array:
+
+```json
+{ "error": "UNEXPECTED_ERROR", "error_code": 10, "message": "Unexpected error occurred.", "request_id": "…" }
+```
 
 ## Matching Whalebone's conventions
 
@@ -72,21 +89,30 @@ both can correlate across them without a translation table.
 and need no key. The deliverable here is a container someone else runs, and an API explorer that
 only exists in Development helps nobody.
 
-**RFC 7807 is a considered divergence.** Their error envelope is `{message, errors: [...]}`, each
-item carrying `error`, `error_code`, `message`, `parameter`, `value` and `accepted_values`. In one
-respect that shape is better than problem+json: `error_code` is a stable integer — `21` for
-`INVALID_PARAM_VALUE`, `22` for `MISSING_PARAM_VALUE` — so a client branches on a number instead
-of string-matching prose. Neither document mentions RFC 7807 anywhere.
+**The error envelope is theirs.** `{message, errors: [...]}` as `application/json`, each entry
+carrying `error`, `error_code`, `message` and `parameter`. `error_code` is the stable integer their
+examples use throughout — `22` for `MISSING_PARAM_VALUE`, `21` for `INVALID_PARAM_VALUE`, `10` for
+`UNEXPECTED_ERROR` — so a client branches on a number rather than string-matching prose. Neither
+document mentions RFC 7807 anywhere, and this service does not emit it.
 
-This service diverges anyway. `application/problem+json` is the registered media type, so a
-generic client can tell the body is an error before parsing it, and ASP.NET Core produces
-per-field `ValidationProblemDetails` out of the framework. Matching their envelope exactly would
-mean hand-rolling and testing a bespoke shape, in a service whose contract is four fields, to gain
-nothing a caller of *this* API can use. Both the media type and the JSON shape sit at the edge and
-are trivially replaceable if this ever had to sit behind the same gateway.
+**They publish two error shapes, so this does too.** Every one of their twelve operations pins
+`400` to the envelope and `500`/`503` to a bare `{error, error_code, message}`. The split is
+principled rather than accidental: a `400` can fail on several parameters at once and needs the
+array, a `500` is a single failure with no parameter to name. Matching them means matching both —
+an envelope everywhere would have been tidier and wrong.
 
-**One divergence inside the divergence.** Their `errors[]` items echo the rejected input back as
-`value`. This service names the field and stops there — see below.
+**Their published statuses are `200, 400, 401, 429, 500, 503`** — no `404` anywhere, and the
+envelope marks neither member required. So a `404` here carries `message` alone: nothing about the
+request was wrong, and there is no parameter to name. The same goes for a body that could not be
+read, and for `405` and `415`.
+
+**One field is deliberately omitted.** Their schema describes `value` as required when `error` is
+`INVALID_PARAM_VALUE` — the rejected input, echoed back. Here that input is a name, an email
+address or a date of birth, and an error body is among the least controlled things a service
+emits: it reaches the caller, then their logs, then frequently a screenshot in a ticket. Their
+`required` list is `[error, error_code, message]`, so omitting `value` stays schema-valid; what it
+departs from is the prose, and a test pins the omission. `accepted_values` is absent for a duller
+reason — no field in this contract is an enum.
 
 ## Data protection
 
@@ -111,10 +137,9 @@ The test was itself verified the only way this kind of test can be: by adding a
 offending line, then removing it. A separate test asserts EF Core's `EnableSensitiveDataLogging` is
 off — it is off by default, and the default is one line away from changing.
 
-**Error bodies never echo the rejected value.** The rejected value here is somebody's name, email
-or date of birth, and an error body is among the least controlled things a service emits: it
-reaches the caller, then their logs, then frequently a screenshot in a ticket. A test posts an
-invalid email and asserts the `400` names `email` without containing it.
+**Error bodies never echo the rejected value.** That is the one field omitted from Whalebone's
+error contract, and the reasoning is above. Two tests hold it: one posts an invalid email and
+asserts the `400` names `email` without containing it, another that no entry ever carries `value`.
 
 **Retention.** A row lives until something deletes it. No TTL, no soft delete, and no second copy
 anywhere — no cache, no outbox, no event stream, no log line, no metric series. An erasure request
@@ -163,7 +188,7 @@ the second port.
 
 ```
 src/
-  Whalebone.Records.Api             Minimal API endpoints, RFC 7807 handler, health, Swagger
+  Whalebone.Records.Api             Minimal API endpoints, error envelope, health, Swagger
   Whalebone.Records.Application     Commands, queries, validators, domain — no ASP.NET, no EF
   Whalebone.Records.Infrastructure  EF Core 8 + Npgsql, migrations, repository
 tests/
@@ -204,7 +229,7 @@ transitive bump walks a build across a licence change with nobody reading a diff
 Requires the .NET 8 SDK and a running Docker daemon (the tests start real containers).
 
 ```bash
-dotnet test                                                      # 78 tests
+dotnet test                                                      # 88 tests
 docker compose -f compose.yaml -f compose.build.yaml up --build   # run from source
 ```
 

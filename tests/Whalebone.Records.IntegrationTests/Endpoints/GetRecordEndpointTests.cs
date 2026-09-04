@@ -30,15 +30,19 @@ public sealed class GetRecordEndpointTests(PostgresFixture fixture) : Integratio
     }
 
     [Fact]
-    public async Task Get_UnknownId_Returns404ProblemDetails()
+    public async Task Get_UnknownId_Returns404WithTheErrorEnvelope()
     {
         using var response = await Client.GetAsync($"/{Guid.NewGuid()}");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
 
+        // A 404 blames no parameter, so the envelope carries message alone. The vendor documents no
+        // 404 at all - 200, 400, 401, 429, 500 and 503 are the whole published set - and their
+        // envelope marks neither member required, so this is the closest reading their schema allows.
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        json.GetProperty("status").GetInt32().Should().Be(404);
+        json.GetProperty("message").GetString().Should().NotBeNullOrWhiteSpace();
+        json.TryGetProperty("errors", out _).Should().BeFalse();
     }
 
     [Fact]

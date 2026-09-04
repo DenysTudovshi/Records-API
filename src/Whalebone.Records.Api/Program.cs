@@ -55,13 +55,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.Configure<Microsoft.AspNetCore.Mvc.JsonOptions>(options =>
     options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower);
 
-// Stamps the correlation id onto every problem body the framework writes: the 404 from
-// Results.Problem, the unrouted 404 via UseStatusCodePages, and the exception
-// middleware's own fallback. It reads TraceIdentifier and not the response header,
-// because at this point the header has not been written yet.
-builder.Services.AddProblemDetails(options =>
-    options.CustomizeProblemDetails = context =>
-        context.ProblemDetails.Extensions["request_id"] = context.HttpContext.TraceIdentifier);
+// Deliberately no AddProblemDetails: every error this service writes is the vendor-shaped
+// ErrorResponse envelope, written by GlobalExceptionHandler and by the status-code handler below.
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddEndpointsApiExplorer();
@@ -86,8 +81,44 @@ await DatabaseMigrator.MigrateAsync(app.Services).ConfigureAwait(false);
 app.UseRequestCorrelation();
 
 // Next, ahead of anything that can throw.
-app.UseExceptionHandler();
-app.UseStatusCodePages();
+// The parameterless overload refuses to start without a fallback, and the only fallback it accepts
+// out of the box is AddProblemDetails - which would put a second error shape on the API for the one
+// path where GlobalExceptionHandler itself fails. This writes the same envelope instead. It runs
+// only if every registered IExceptionHandler declines, which ours never does.
+app.UseExceptionHandler(new ExceptionHandlerOptions
+{
+    ExceptionHandler = context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+
+        return context.Response.WriteAsJsonAsync(
+            FaultResponse.Unexpected("Unexpected error occurred.", context.TraceIdentifier),
+            options: null,
+            contentType: "application/json");
+    },
+});
+
+// The statuses the pipeline sets without writing a body: an unrouted path, and a request body the
+// binder refused. One error shape across the whole API or it is worse than either shape alone, so
+// these carry the same envelope as everything else - message only, since neither names a parameter.
+app.UseStatusCodePages(async context =>
+{
+    var response = context.HttpContext.Response;
+
+    var message = response.StatusCode switch
+    {
+        StatusCodes.Status400BadRequest => "The request body could not be read.",
+        StatusCodes.Status404NotFound => "No route matches this request.",
+        StatusCodes.Status405MethodNotAllowed => "That method is not allowed on this route.",
+        StatusCodes.Status415UnsupportedMediaType => "The request media type is not supported.",
+        _ => "The request could not be completed.",
+    };
+
+    await response.WriteAsJsonAsync(
+        ErrorResponse.Plain(message, context.HttpContext.TraceIdentifier),
+        options: null,
+        contentType: "application/json").ConfigureAwait(false);
+});
 
 // Served in every environment on purpose: the deliverable is a container someone else
 // runs, and an unreachable API explorer helps nobody.

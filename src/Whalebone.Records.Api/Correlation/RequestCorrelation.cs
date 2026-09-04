@@ -37,9 +37,9 @@ internal static class RequestCorrelation
         {
             var id = FromInboundHeader(context.Request.Headers[HeaderName]) ?? Guid.NewGuid().ToString();
 
-            // TraceIdentifier rather than a parallel HttpContext.Items entry: the exception
-            // handler and the ProblemDetails customisation both hold the context already, and
-            // neither can read a response header that UseExceptionHandler has cleared.
+            // TraceIdentifier rather than a parallel HttpContext.Items entry: every writer of an
+            // error body already holds the context, and none of them can read a response header
+            // that UseExceptionHandler has cleared.
             context.TraceIdentifier = id;
 
             // The only placement that survives the error path. UseExceptionHandler calls

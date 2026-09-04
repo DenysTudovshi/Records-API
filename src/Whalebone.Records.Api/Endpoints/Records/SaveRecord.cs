@@ -20,7 +20,7 @@ internal sealed class SaveRecord : IEndpoint
                 "one is replaced (200). The Location header points at GET /{external_id}.")
             .Produces<PersonRecordDto>(StatusCodes.Status201Created)
             .Produces<PersonRecordDto>(StatusCodes.Status200OK)
-            .ProducesValidationProblem();
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
     }
 
     private static async Task<IResult> HandleAsync(

@@ -15,6 +15,26 @@ public abstract class IntegrationTestBase(PostgresFixture fixture) : IAsyncLifet
 
     public Task DisposeAsync() => Task.CompletedTask;
 
+    /// <summary>
+    /// The <c>errors[]</c> entries of an error body, keyed by the <c>parameter</c> each one names.
+    /// </summary>
+    /// <remarks>
+    /// A structural query, not test logic: the assertions stay in the tests, where a reader can see
+    /// them. Throws if the body has no <c>errors</c> member, which is itself the right failure - a
+    /// test asking for a parameter's error wants to know when the array was never written.
+    /// </remarks>
+    protected static async Task<Dictionary<string, JsonElement>> ErrorsByParameterAsync(HttpResponseMessage response)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+
+        return body.GetProperty("errors").EnumerateArray().ToDictionary(
+            entry => entry.GetProperty("parameter").GetString()!,
+            entry => entry,
+            StringComparer.Ordinal);
+    }
+
     /// <summary>Builds a request body as raw JSON, so the tests exercise the wire contract rather than a C# type.</summary>
     protected static StringContent Body(
         string externalId,

@@ -2,6 +2,7 @@ using FluentValidation.TestHelper;
 
 using Microsoft.Extensions.Time.Testing;
 
+using Whalebone.Records.Application.Abstractions;
 using Whalebone.Records.Application.Records.Save;
 
 namespace Whalebone.Records.UnitTests.Records;
@@ -76,6 +77,39 @@ public sealed class SaveRecordCommandValidatorTests
     {
         _validator.TestValidate(Command() with { DateOfBirth = Now.AddSeconds(1) })
             .ShouldHaveValidationErrorFor("date_of_birth");
+    }
+
+    [Fact]
+    public void Absent_values_are_reported_as_missing()
+    {
+        var result = _validator.Validate(new SaveRecordCommand(null, null, null, null));
+
+        result.Errors.Select(failure => failure.PropertyName)
+            .Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
+        result.Errors.Should().OnlyContain(failure => failure.ErrorCode == ValidationErrorCodes.Missing);
+    }
+
+    [Fact]
+    public void Present_but_unusable_values_are_reported_as_invalid()
+    {
+        // Every one of these was sent by the caller - an all-zero uuid, a blank name, a string that
+        // is not an address, and the sentinel the converter yields for an unreadable timestamp.
+        var result = _validator.Validate(
+            new SaveRecordCommand(Guid.Empty, "", "nope", default(DateTimeOffset)));
+
+        result.Errors.Select(failure => failure.PropertyName)
+            .Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
+        result.Errors.Should().OnlyContain(failure => failure.ErrorCode == ValidationErrorCodes.Invalid);
+    }
+
+    [Fact]
+    public void Each_field_reports_at_most_one_failure()
+    {
+        // The chains stop at their first failure, so a caller who sent nothing at all is told four
+        // things, not four-plus-the-consequences. The edge relies on this: one entry per parameter.
+        var result = _validator.Validate(new SaveRecordCommand(null, null, null, null));
+
+        result.Errors.Select(failure => failure.PropertyName).Should().OnlyHaveUniqueItems();
     }
 
     [Fact]

@@ -5,11 +5,18 @@ using Whalebone.Records.Application.Domain;
 
 namespace Whalebone.Records.Application.Records.Save;
 
+/// <remarks>
+/// Every member is nullable because the wire can omit any of them, and "absent" is a different
+/// answer to the caller than "present but unusable" - the difference between the two error codes
+/// this contract reports. Collapsing them onto defaults here would throw that away before the
+/// validator ever saw it. <see cref="Behaviors.ValidationBehavior{TRequest,TResponse}"/> runs
+/// ahead of every handler, so a handler that is reached at all has all four.
+/// </remarks>
 public sealed record SaveRecordCommand(
-    Guid ExternalId,
-    string Name,
-    string Email,
-    DateTimeOffset DateOfBirth) : IRequest<SaveRecordResult>;
+    Guid? ExternalId,
+    string? Name,
+    string? Email,
+    DateTimeOffset? DateOfBirth) : IRequest<SaveRecordResult>;
 
 /// <param name="Created">
 /// True when this call inserted the record, false when it updated an existing one.
@@ -33,17 +40,19 @@ internal sealed class SaveRecordCommandHandler(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // The null-forgiving operators below are load-bearing on ValidationBehavior, which runs
+        // ahead of every handler: a command that reaches here has already been proved complete.
         var existing = await repository
-            .GetByExternalIdAsync(request.ExternalId, cancellationToken)
+            .GetByExternalIdAsync(request.ExternalId!.Value, cancellationToken)
             .ConfigureAwait(false);
 
         if (existing is null)
         {
             var created = PersonRecord.Create(
-                request.ExternalId,
-                request.Name,
-                request.Email,
-                request.DateOfBirth,
+                request.ExternalId!.Value,
+                request.Name!,
+                request.Email!,
+                request.DateOfBirth!.Value,
                 timeProvider.GetUtcNow());
 
             repository.Add(created);
@@ -60,7 +69,7 @@ internal sealed class SaveRecordCommandHandler(
                 // no loop: the second attempt cannot hit the same race, because the losing
                 // insert has been detached and we re-read the winner.
                 existing = await repository
-                    .GetByExternalIdAsync(request.ExternalId, cancellationToken)
+                    .GetByExternalIdAsync(request.ExternalId!.Value, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (existing is null)
@@ -70,7 +79,7 @@ internal sealed class SaveRecordCommandHandler(
             }
         }
 
-        existing.Update(request.Name, request.Email, request.DateOfBirth, timeProvider.GetUtcNow());
+        existing.Update(request.Name!, request.Email!, request.DateOfBirth!.Value, timeProvider.GetUtcNow());
         await repository.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return new SaveRecordResult(PersonRecordDto.From(existing), Created: false);

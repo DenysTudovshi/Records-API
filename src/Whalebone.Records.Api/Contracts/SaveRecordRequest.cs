@@ -19,9 +19,10 @@ public sealed record SaveRecordRequest(
     string? Email,
     DateTimeOffset? DateOfBirth)
 {
-    internal SaveRecordCommand ToCommand() => new(
-        ExternalId ?? Guid.Empty,
-        Name ?? string.Empty,
-        Email ?? string.Empty,
-        DateOfBirth ?? default);
+    /// <remarks>
+    /// Straight through, deliberately. Substituting defaults here would erase the one distinction
+    /// the error contract reports: a field the caller omitted against one they sent in a form this
+    /// service cannot use.
+    /// </remarks>
+    internal SaveRecordCommand ToCommand() => new(ExternalId, Name, Email, DateOfBirth);
 }

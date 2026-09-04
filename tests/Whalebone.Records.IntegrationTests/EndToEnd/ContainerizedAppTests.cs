@@ -153,7 +153,17 @@ public sealed class ContainerizedAppTests : IAsyncLifetime
         using var response = await _client.PostAsync("/save", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+
+        // The media type alone proves nothing now - a success returns application/json too. This is
+        // the vendor envelope, over a real socket, out of the production image.
+        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        var entries = json.GetProperty("errors").EnumerateArray().ToArray();
+
+        json.GetProperty("message").GetString().Should().Be("Request validation failed");
+        entries.Select(entry => entry.GetProperty("parameter").GetString())
+            .Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
+        entries.Should().OnlyContain(entry => entry.GetProperty("error_code").GetInt32() == 22);
     }
 
     public async Task DisposeAsync()

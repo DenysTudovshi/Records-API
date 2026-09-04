@@ -120,8 +120,28 @@ public sealed class PersonalDataTests(PostgresFixture fixture) : IntegrationTest
         body.Should().NotContain(Name);
 
         // Still useful, though: the field is named, in its wire spelling.
-        JsonDocument.Parse(body).RootElement
-            .GetProperty("errors").TryGetProperty("email", out _).Should().BeTrue();
+        JsonDocument.Parse(body).RootElement.GetProperty("errors").EnumerateArray().ToArray()
+            .Should().ContainSingle(entry => entry.GetProperty("parameter").GetString() == "email");
+    }
+
+    [Fact]
+    public async Task ErrorEntries_NeverCarryTheRejectedValue()
+    {
+        using var response = await Client.PostAsync(
+            "/save", Body(Guid.NewGuid().ToString(), Name, "piiemailmarker-not-an-email", DateOfBirth));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var entries = JsonDocument.Parse(await response.Content.ReadAsStringAsync())
+            .RootElement.GetProperty("errors").EnumerateArray().ToArray();
+
+        // The vendor's schema describes `value` as required when `error` is INVALID_PARAM_VALUE,
+        // and this service omits it deliberately: here the rejected value is a name, an email
+        // address or a date of birth. Their `required` list is [error, error_code, message], so
+        // omitting it stays schema-valid - what it departs from is the prose. This is the single
+        // point where the service does not follow their error contract, so it is pinned.
+        entries.Should().NotBeEmpty();
+        entries.Where(entry => entry.TryGetProperty("value", out _)).Should().BeEmpty();
     }
 
     [Fact]

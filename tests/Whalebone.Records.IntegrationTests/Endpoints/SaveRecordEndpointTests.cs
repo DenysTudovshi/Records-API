@@ -82,19 +82,24 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
     }
 
     [Fact]
-    public async Task Save_MissingFields_Returns400ProblemDetailsKeyedByWireFieldNames()
+    public async Task Save_MissingFields_Returns400NamingEveryOneAsMissing()
     {
         using var content = new StringContent("{}", Encoding.UTF8, "application/json");
 
         using var response = await Client.PostAsync("/save", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
 
-        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        var errors = await ErrorsByParameterAsync(response);
 
-        json.GetProperty("errors").EnumerateObject().Select(property => property.Name)
-            .Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
+        errors.Keys.Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
+
+        // MISSING, not INVALID. The distinction is the vendor's own, and a field nobody sent is the
+        // case it exists for - see Save_MalformedScalars_... for the other side of it.
+        errors.Values.Should().OnlyContain(entry =>
+            entry.GetProperty("error").GetString() == "MISSING_PARAM_VALUE"
+            && entry.GetProperty("error_code").GetInt32() == 22);
     }
 
     [Theory]
@@ -106,8 +111,11 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        json.GetProperty("errors").TryGetProperty("email", out _).Should().BeTrue();
+        var errors = await ErrorsByParameterAsync(response);
+
+        errors.Should().ContainKey("email");
+        errors["email"].GetProperty("error").GetString().Should().Be("INVALID_PARAM_VALUE");
+        errors["email"].GetProperty("error_code").GetInt32().Should().Be(21);
     }
 
     [Fact]
@@ -121,6 +129,12 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
 
         var body = await response.Content.ReadAsStringAsync();
         body.Should().NotContain("Npgsql").And.NotContain("StackTrace").And.NotContain("at Whalebone");
+
+        // A body that could not be read has no parameter to blame, and the vendor's envelope marks
+        // neither member required - so this carries message alone rather than an invented entry.
+        var json = JsonDocument.Parse(body).RootElement;
+        json.GetProperty("message").GetString().Should().NotBeNullOrWhiteSpace();
+        json.TryGetProperty("errors", out _).Should().BeFalse();
     }
 
     [Theory]
@@ -131,14 +145,14 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
         using var response = await Client.PostAsync("/save", Body(externalId));
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
 
-        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-
-        // Exactly one key: everything else in the body is valid, so a second entry would mean the
+        // Exactly one entry: everything else in the body is valid, so a second would mean the
         // refused token had derailed the parse of a later member.
-        json.GetProperty("errors").EnumerateObject().Select(property => property.Name)
-            .Should().BeEquivalentTo("external_id");
+        var errors = await ErrorsByParameterAsync(response);
+
+        errors.Keys.Should().BeEquivalentTo("external_id");
+        errors["external_id"].GetProperty("error_code").GetInt32().Should().Be(21);
     }
 
     [Theory]
@@ -152,11 +166,12 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        // Left to the binder this is the generic problem body: the caller learns the request was
-        // bad, but not which field, and not that the format was the problem.
-        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        json.GetProperty("errors").EnumerateObject().Select(property => property.Name)
-            .Should().BeEquivalentTo("date_of_birth");
+        // Left to the binder this is the generic envelope: the caller learns the request was bad,
+        // but not which field, and not that the format was the problem.
+        var errors = await ErrorsByParameterAsync(response);
+
+        errors.Keys.Should().BeEquivalentTo("date_of_birth");
+        errors["date_of_birth"].GetProperty("error_code").GetInt32().Should().Be(21);
     }
 
     [Theory]
@@ -175,9 +190,9 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
         // makes the offset mandatory; this asserts the service does too.
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        json.GetProperty("errors").EnumerateObject().Select(property => property.Name)
-            .Should().BeEquivalentTo("date_of_birth");
+        var errors = await ErrorsByParameterAsync(response);
+
+        errors.Keys.Should().BeEquivalentTo("date_of_birth");
     }
 
     [Theory]
@@ -197,9 +212,9 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
         // This is the only case that reaches the converters' Skip branch. If the composite were
         // not consumed, the reader would stall on it and the three valid members after it would
         // never bind - so the tell is that external_id is the *only* error reported.
-        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        body.GetProperty("errors").EnumerateObject().Select(property => property.Name)
-            .Should().BeEquivalentTo("external_id");
+        var errors = await ErrorsByParameterAsync(response);
+
+        errors.Keys.Should().BeEquivalentTo("external_id");
     }
 
     [Fact]
@@ -210,12 +225,16 @@ public sealed class SaveRecordEndpointTests(PostgresFixture fixture) : Integrati
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-
         // The point of moving the failure out of the binder: one response naming all four
         // problems, rather than a 400 that stops at the first token it could not read.
-        json.GetProperty("errors").EnumerateObject().Select(property => property.Name)
-            .Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
+        var errors = await ErrorsByParameterAsync(response);
+
+        errors.Keys.Should().BeEquivalentTo("external_id", "name", "email", "date_of_birth");
+
+        // All four were sent, all four were unusable: INVALID throughout, never MISSING.
+        errors.Values.Should().OnlyContain(entry =>
+            entry.GetProperty("error").GetString() == "INVALID_PARAM_VALUE"
+            && entry.GetProperty("error_code").GetInt32() == 21);
     }
 
     [Fact]

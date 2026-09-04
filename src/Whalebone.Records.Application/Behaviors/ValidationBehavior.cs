@@ -10,9 +10,9 @@ using MediatR;
 namespace Whalebone.Records.Application.Behaviors;
 
 /// <summary>
-/// Runs every registered validator for a request before its handler. Failures surface
-/// as a <see cref="ValidationException"/>, which the API's exception handler renders as
-/// RFC 7807 with per-field errors.
+/// Runs every registered validator for a request before its handler. Failures surface as a
+/// <see cref="ValidationException"/>, which the API's exception handler renders as a <c>400</c>
+/// naming each offending parameter.
 /// </summary>
 /// <remarks>
 /// This is the only pipeline behaviour in the service, and the reason MediatR earns its
