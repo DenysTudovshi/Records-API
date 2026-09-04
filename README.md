@@ -197,6 +197,10 @@ auth. `compose.yaml` publishes both, so it is still one command to reach, and a 
 
 ## Architecture
 
+Clean-architecture layering with the use cases at the centre: `Application` depends outward on
+nothing, and both `Api` and `Infrastructure` depend on it. Each use case is a vertical slice, its
+command, handler and validator in one folder.
+
 ```
   POST /save
       │
@@ -228,8 +232,6 @@ auth. `compose.yaml` publishes both, so it is still one command to reach, and a 
                  both arrows point inward
 ```
 
-Layered at the project boundary, vertical slices inside:
-
 ```
 Application/
   Records/
@@ -239,12 +241,10 @@ Application/
   Domain/        PersonRecord
 ```
 
-**MediatR** buys one thing: `ValidationBehavior`, a single pipeline behaviour that gives both
-endpoints identical validation with no per-endpoint wiring, with the rules declared beside the
-command they guard. The alternative is a few lines per endpoint that must not be forgotten, and
-forgetting them fails silently by accepting bad input. The cost is a reflection-based dispatcher and
-assembly scanning at startup. At one behaviour and two endpoints that is close to break-even; an
-endpoint filter reaches the same place with no package.
+**MediatR** buys one thing: `ValidationBehavior`, which gives both endpoints identical validation
+with no per-endpoint wiring. It costs a reflection-based dispatcher and assembly scanning at
+startup. At one behaviour and two endpoints that is close to break-even; an endpoint filter reaches
+the same place with no package.
 
 **Dependency pins.** Two packages are pinned to their last open-source release, *exactly* rather
 than as a floor, so a restore cannot silently cross a licence boundary:
