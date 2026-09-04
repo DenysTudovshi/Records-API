@@ -101,10 +101,16 @@ string-matching prose. Neither document mentions RFC 7807 anywhere, and this ser
 it.
 
 **There are two error shapes, and this service implements both.** All twelve published operations
-pin `400` to the envelope and `500`/`503` to a bare `{error, error_code, message}`. The split is
-principled rather than accidental: a `400` can fail on several parameters at once and needs the
-array, a `500` is a single failure with no parameter to name. An envelope everywhere would have
-been tidier and wrong.
+pin `400` to the envelope and `500`/`503` to the bare object:
+
+```
+400   {message, errors[{error, error_code, message, parameter}]}   several can fail at once
+500   {error, error_code, message}                                 one failure, none to name
+
+      value is omitted from both — here it would be a name, email or date of birth
+```
+
+An envelope everywhere would have been tidier and wrong.
 
 **The published status set is `200, 400, 401, 429, 500, 503`**. No `404` anywhere, and the envelope
 marks neither member required. So a `404` here carries `message` alone: nothing about the request
@@ -150,47 +156,88 @@ is no `DELETE` endpoint, deliberately; see [omissions](#deliberate-omissions).
 
 ## Observability
 
-**Correlation id.** Every response carries `X-Request-Id`, error responses included, and every log
-line for that request carries it under `CorrelationId`. An inbound one is echoed, so a trace that
-began upstream continues here. It is honoured only if it could plausibly be a request id: one
-header, at most 64 characters, drawn from `[A-Za-z0-9._:-]`. That value reaches both a response
-header and every log line, which is how a correlation id becomes a log-injection vector.
+One request, three outputs:
 
-Console logging is JSON with scopes included, since this ships as a container.
+```
+POST /save  {name, email, date_of_birth}
+     │
+     ├──► response header   X-Request-Id: 0c209a31-…
+     │
+     ├──► every log line    CorrelationId=0c209a31-…   RequestPath=/save
+     │
+     └──► metric series     http_route="/save"   http_response_status_code="201"
+                            ▲
+                            never: external_id · name · email · date_of_birth
+```
 
-**Metrics.** `GET /metrics` serves the Prometheus text exposition format, publishing ASP.NET Core's
-own instruments rather than hand-rolled counters: the framework already records
-`http.server.request.duration` and `http.server.active_requests` for every route, including the ones
-nobody remembered to instrument.
+**Correlation id.** An inbound `X-Request-Id` is echoed, so a trace that began upstream continues
+here, but only if it could plausibly be a request id: one header, at most 64 characters, drawn from
+`[A-Za-z0-9._:-]`. That value reaches both a response header and every log line, which is how a
+correlation id becomes a log-injection vector. Console logging is JSON with scopes included, since
+this ships as a container.
 
-**No series is labelled with `external_id`**, which would be unbounded cardinality and personal data
-in one move. The route label is the route *template* (`/{id:guid}`), and an unmatched request
-carries no route label at all, so a caller cannot mint series by hammering random paths. A test
-asserts the scrape contains no UUID-shaped token and no label named after a contract field.
+**Metrics.** ASP.NET Core's own instruments rather than hand-rolled counters: the framework already
+records `http.server.request.duration` and `http.server.active_requests` for every route, including
+the ones nobody remembered to instrument. The route label is the route *template* (`/{id:guid}`),
+and an unmatched request carries no route label at all, so a caller cannot mint series by hammering
+random paths. A test asserts the scrape carries no UUID-shaped token and no label named after a
+contract field.
 
 Served by `prometheus-net.AspNetCore`, because the OpenTelemetry Prometheus exporter has never
 shipped a stable release: all 34 published versions are prerelease.
 
-**The scrape has its own listener, on `9090`.** It publishes `process_*` internals and this service
-has no auth, so serving it beside the API would hand those to anyone who can reach the API.
-`compose.yaml` publishes both ports, so it is still one command to reach; on a real deployment
-`9090` goes to the monitoring network. A test asserts `/metrics` answers `404` on the API port.
+| Port   | Serves               | Reachable from         |
+| ------ | -------------------- | ---------------------- |
+| `8080` | API, Swagger, health | Public                 |
+| `9090` | `/metrics` only      | The monitoring network |
+
+The scrape gets its own listener because it publishes `process_*` internals and this service has no
+auth. `compose.yaml` publishes both, so it is still one command to reach, and a test asserts
+`/metrics` answers `404` on the API port.
 
 ## Architecture
 
 ```
-src/
-  Whalebone.Records.Api             Minimal API endpoints, error envelope, health, Swagger
-  Whalebone.Records.Application     Commands, queries, validators, domain. No ASP.NET, no EF
-  Whalebone.Records.Infrastructure  EF Core 8 + Npgsql, migrations, repository
-tests/
-  Whalebone.Records.UnitTests        Domain and validation rules
-  Whalebone.Records.IntegrationTests Endpoints against real PostgreSQL, plus end-to-end
+  POST /save
+      │
+      ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │ Api             SaveRecord · GetRecordById · error envelope  │
+  │                 SaveRecordRequest ──► SaveRecordCommand      │
+  └──────────────────────────────────────────────────────────────┘
+      │
+      ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │ Application     ValidationBehavior      every use case       │
+  │                 SaveRecordCommandHandler                     │
+  │                 IRecordRepository       ◄── declared here    │
+  └──────────────────────────────────────────────────────────────┘
+      │
+      ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │ Infrastructure  RecordRepository        ──► implements it    │
+  │                 EF Core 8 + Npgsql, migrations               │
+  └──────────────────────────────────────────────────────────────┘
+      │
+      ▼
+  PostgreSQL
+
+
+  Api ──────────►  Application  ◄────────── Infrastructure
+                        ▲
+                 both arrows point inward
 ```
 
-Layered at the project boundary, vertical slices inside: each use case owns its command, handler and
-validator in one folder (`Records/Save`, `Records/GetById`). `Application` references neither
-ASP.NET Core nor EF Core; it declares `IRecordRepository` and `Infrastructure` implements it.
+Layered at the project boundary, vertical slices inside:
+
+```
+Application/
+  Records/
+    Save/        SaveRecordCommand · Handler · Validator     one slice
+    GetById/     GetRecordQuery    · Handler                 one slice
+  Abstractions/  IRecordRepository · ValidationErrorCodes · PersonalDataAttribute
+  Domain/        PersonRecord
+```
 
 **MediatR** buys one thing: `ValidationBehavior`, a single pipeline behaviour that gives both
 endpoints identical validation with no per-endpoint wiring, with the rules declared beside the
