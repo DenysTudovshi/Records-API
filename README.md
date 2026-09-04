@@ -77,45 +77,47 @@ brief leaves open. Both answered `200` to an unauthenticated `GET` on 2026-09-02
 - <https://api.whalebone.io/whalebone/2/doc/openapi> — *Whalebone API*, ~110 KB
 - <https://portal.whalebone.io/api/public/v1/doc/api-spec> — *Policy Config API*, ~27 KB
 
-**`snake_case` is theirs.** Counting every key in a `properties` map plus every declared
-parameter name, across both documents: 62 names carry an underscore, against exactly two
-camelCase (`createdAt`, `createdBy`). So the wire format here is `snake_case`, in the response body
-and in the OpenAPI document alike.
+**The wire format is `snake_case`.** Counting every key in a `properties` map plus every declared
+parameter name, across both documents: 62 names carry an underscore, against exactly two camelCase
+(`createdAt`, `createdBy`). So `snake_case` it is, in the response body and in the OpenAPI document
+alike.
 
-**`X-Request-Id` is theirs.** Their API returns one, as a UUID, so a caller sitting in front of
-both can correlate across them without a translation table.
+**Correlation travels as `X-Request-Id`.** The published API returns one, as a UUID, so a caller
+sitting in front of both services can correlate across them without a translation table.
 
-**Serving the OpenAPI document in every environment is theirs.** Both documents above are public
-and need no key. The deliverable here is a container someone else runs, and an API explorer that
-only exists in Development helps nobody.
+**The OpenAPI document is served in every environment.** Both documents above are public and need
+no key. The deliverable here is a container someone else runs, and an API explorer that only exists
+in Development helps nobody.
 
-**`x-wb-encrypt` is theirs.** Their only vendor extension, marking personal data at contract level.
-This service's OpenAPI document carries it too — see [Data protection](#data-protection).
+**Personal data is marked with `x-wb-encrypt`.** The one vendor extension in either document,
+applied at contract level. This service's OpenAPI document carries it too — see
+[Data protection](#data-protection).
 
-**The error envelope is theirs.** `{message, errors: [...]}` as `application/json`, each entry
-carrying `error`, `error_code`, `message` and `parameter`. `error_code` is the stable integer their
-examples use throughout — `22` for `MISSING_PARAM_VALUE`, `21` for `INVALID_PARAM_VALUE`, `10` for
-`UNEXPECTED_ERROR` — so a client branches on a number rather than string-matching prose. Neither
-document mentions RFC 7807 anywhere, and this service does not emit it.
+**Errors use the published envelope.** `{message, errors: [...]}` as `application/json`, each entry
+carrying `error`, `error_code`, `message` and `parameter`. `error_code` is a stable integer, used
+consistently across the published examples — `22` for `MISSING_PARAM_VALUE`, `21` for
+`INVALID_PARAM_VALUE`, `10` for `UNEXPECTED_ERROR` — so a client branches on a number rather than
+string-matching prose. Neither document mentions RFC 7807 anywhere, and this service does not emit
+it.
 
-**They publish two error shapes, so this does too.** Every one of their twelve operations pins
-`400` to the envelope and `500`/`503` to a bare `{error, error_code, message}`. The split is
+**There are two error shapes, and this service implements both.** All twelve published operations
+pin `400` to the envelope and `500`/`503` to a bare `{error, error_code, message}`. The split is
 principled rather than accidental: a `400` can fail on several parameters at once and needs the
-array, a `500` is a single failure with no parameter to name. Matching them means matching both —
-an envelope everywhere would have been tidier and wrong.
+array, a `500` is a single failure with no parameter to name. An envelope everywhere would have
+been tidier and wrong.
 
-**Their published statuses are `200, 400, 401, 429, 500, 503`** — no `404` anywhere, and the
-envelope marks neither member required. So a `404` here carries `message` alone: nothing about the
-request was wrong, and there is no parameter to name. The same goes for a body that could not be
-read, and for `405` and `415`.
+**The published status set is `200, 400, 401, 429, 500, 503`** — no `404` anywhere, and the envelope
+marks neither member required. So a `404` here carries `message` alone: nothing about the request
+was wrong, and there is no parameter to name. The same goes for a body that could not be read, and
+for `405` and `415`.
 
-**One field is deliberately omitted.** Their schema describes `value` as required when `error` is
-`INVALID_PARAM_VALUE` — the rejected input, echoed back. Here that input is a name, an email
-address or a date of birth, and an error body is among the least controlled things a service
-emits: it reaches the caller, then their logs, then frequently a screenshot in a ticket. Their
-`required` list is `[error, error_code, message]`, so omitting `value` stays schema-valid; what it
-departs from is the prose, and a test pins the omission. `accepted_values` is absent for a duller
-reason — no field in this contract is an enum.
+**One field is deliberately omitted.** The `error` schema describes `value` as required when
+`error` is `INVALID_PARAM_VALUE` — the rejected input, echoed back. Here that input is a name, an
+email address or a date of birth, and an error body is among the least controlled things a service
+emits: it reaches the caller, then their logs, then frequently a screenshot in a ticket. The
+schema's `required` list is `[error, error_code, message]`, so omitting `value` stays schema-valid;
+what it departs from is the prose, and a test pins the omission. `accepted_values` is absent for a
+duller reason — no field in this contract is an enum.
 
 ## Data protection
 
